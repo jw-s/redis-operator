@@ -1,0 +1,7 @@
+[environments]
+  [environments.development]
+    name = "maudlin-hummingbird"
+    namespace = "default"
+    wait = false
+    watch = false
+    watch_delay = 2
