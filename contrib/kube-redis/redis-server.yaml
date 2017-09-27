@@ -1,7 +1,0 @@
-apiVersion: "operator.joelws.com/v1"
-kind: RedisServer
-metadata:
-  name: my-redis
-spec:
-  size: 5
-

@@ -1,0 +1,10 @@
+apiVersion: operator.joelws.com/v1
+kind: Redis
+metadata:
+  name: my-redis
+spec:
+  sentinels:
+    replicas: 3
+    quorum: 2
+  slaves:
+    replicas: 3

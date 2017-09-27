@@ -1,146 +1,238 @@
 package controller
 
 import (
-	"fmt"
-	"github.com/JoelW-S/redis-operator/pkg/operator/client"
-	"github.com/JoelW-S/redis-operator/pkg/operator/cr"
-	"github.com/JoelW-S/redis-operator/pkg/operator/event"
-	"github.com/JoelW-S/redis-operator/pkg/operator/processor"
-	"github.com/JoelW-S/redis-operator/pkg/operator/spec"
+	"time"
+
+	"github.com/jw-s/redis-operator/pkg/apis/redis/v1"
+	redisclient "github.com/jw-s/redis-operator/pkg/generated/clientset/typed/redis/v1"
+	redisinformer "github.com/jw-s/redis-operator/pkg/generated/informers/externalversions/redis/v1"
+	redislister "github.com/jw-s/redis-operator/pkg/generated/listers/redis/v1"
+	"github.com/jw-s/redis-operator/pkg/operator/redis"
+	"github.com/jw-s/redis-operator/pkg/operator/spec"
+	"github.com/jw-s/redis-operator/pkg/operator/util"
 	"github.com/sirupsen/logrus"
-	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
-	"k8s.io/apimachinery/pkg/fields"
-	kwatch "k8s.io/apimachinery/pkg/watch"
+	"k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/wait"
+	v1beta1informer "k8s.io/client-go/informers/apps/v1beta1"
+	v1informer "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/pkg/api/v1"
+	v1beta1Lister "k8s.io/client-go/listers/apps/v1beta1"
+	v1lister "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/util/workqueue"
+	"k8s.io/kubernetes/plugin/pkg/scheduler/api"
 )
 
-type Namespace string
-
 type Controller interface {
-	Run(stopCh <-chan struct{})
+	Run(<-chan struct{})
 }
 
 type RedisController struct {
 	logger *logrus.Entry
 	Config
-	redisClient *client.RedisServerCR
-	processor   cache.ResourceEventHandler
-	handler     event.Handler
-	servers     map[string]*spec.RedisServer
-	stopCh      chan struct{}
+	kubernetesClient kubernetes.Interface
+	redisClient      redisclient.RedisesGetter
+	cacheSyncs       []cache.InformerSynced
+	redisLister      redislister.RedisLister
+	podLister        v1lister.PodLister
+	deploymentLister v1beta1Lister.DeploymentLister
+	serviceLister    v1lister.ServiceLister
+	endpointsLister  v1lister.EndpointsLister
+	configMapLister  v1lister.ConfigMapLister
+	queue            workqueue.RateLimitingInterface
+	redises          map[string]*redis.Redis
 }
 
 type Config struct {
 	*rest.Config
-	Namespace           Namespace
-	kubernetesClient    kubernetes.Interface
-	KubernetesExtClient *apiextensionsclient.Clientset
+	DefaultResync time.Duration
 }
 
-func NewConfig(cfg *rest.Config, namespace Namespace, kubernetesClient kubernetes.Interface, KubernetesExtClient *apiextensionsclient.Clientset) Config {
+func NewConfig(cfg *rest.Config,
+	defaultResync time.Duration) Config {
 	return Config{
-		Config:              cfg,
-		Namespace:           namespace,
-		kubernetesClient:    kubernetesClient,
-		KubernetesExtClient: KubernetesExtClient,
+		Config:        cfg,
+		DefaultResync: defaultResync,
 	}
 }
 
-func New(cfg Config, redisClient *client.RedisServerCR) Controller {
-	return &RedisController{
-		logger:      logrus.WithField("pkg", "controller"),
-		Config:      cfg,
-		redisClient: redisClient,
-		processor:   processor.RedisEventProcessor{},
-		handler:     event.NewHandler(),
-		servers:     make(map[string]*spec.RedisServer),
-	}
-}
+func New(cfg Config,
+	kubernetesClient kubernetes.Interface,
+	redisClient redisclient.RedisesGetter,
+	redisInformer redisinformer.RedisInformer,
+	podInformer v1informer.PodInformer,
+	deploymentInformer v1beta1informer.DeploymentInformer,
+	serviceInformer v1informer.ServiceInformer,
+	endpointsInformer v1informer.EndpointsInformer,
+	configMapInformer v1informer.ConfigMapInformer) Controller {
 
-func (c *RedisController) Run(stopChan <-chan struct{}) {
-
-	c.createRedisServer()
-
-	eventCh, errCh := c.watch()
-
-	go c.HandleEvents(eventCh, errCh)
-
-}
-
-func (c *RedisController) HandleEvents(eventCh <-chan event.Event, errCh <-chan error) {
-
-	for {
-		select {
-		case e := <-eventCh:
-
-			c.servers[e.Object.Name] = e.Object
-			c.determineEventType(e)
-
-		case err := <-errCh:
-
-			c.logger.Fatal(err)
-
-		case <-c.stopCh:
-			c.logger.Info("Shutting down handling of events")
-			return
-
-		}
+	cacheSyncs := []cache.InformerSynced{
+		redisInformer.Informer().HasSynced,
+		podInformer.Informer().HasSynced,
+		deploymentInformer.Informer().HasSynced,
+		serviceInformer.Informer().HasSynced,
+		endpointsInformer.Informer().HasSynced,
+		configMapInformer.Informer().HasSynced,
 	}
 
-}
-
-func (c *RedisController) determineEventType(event event.Event) {
-
-	switch event.Type {
-
-	case kwatch.Added:
-
-		c.handler.OnAdd(event)
-
-	case kwatch.Modified:
-
-		c.handler.OnUpdate(event)
-
-	case kwatch.Deleted:
-
-		c.handler.OnDelete(event)
-
-	default:
-
-		c.logger.Fatal("Invalid event type!")
-
+	c := &RedisController{
+		logger:           logrus.WithField("pkg", "controller"),
+		Config:           cfg,
+		kubernetesClient: kubernetesClient,
+		redisClient:      redisClient,
+		cacheSyncs:       cacheSyncs,
+		redisLister:      redisInformer.Lister(),
+		podLister:        podInformer.Lister(),
+		deploymentLister: deploymentInformer.Lister(),
+		serviceLister:    serviceInformer.Lister(),
+		endpointsLister:  endpointsInformer.Lister(),
+		configMapLister:  configMapInformer.Lister(),
+		queue:            workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		redises:          make(map[string]*redis.Redis),
 	}
-}
-func (c *RedisController) createRedisServer() {
 
-	_, err := client.CreateCustomResourceDefinition(c.KubernetesExtClient)
+	redisInformer.Informer().AddEventHandler(
+		cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				key, err := cache.MetaNamespaceKeyFunc(obj)
+				if err != nil {
+					c.logger.WithError(err).Fatal("Add")
+					return
+				}
+				c.queue.Add(key)
+			},
+			DeleteFunc: func(obj interface{}) {
+				key, err := cache.MetaNamespaceKeyFunc(obj)
+				if err != nil {
+					c.logger.WithError(err).Fatal("Delete")
+					return
+				}
+				c.queue.Add(key)
+			},
+			UpdateFunc: func(oldObj interface{}, newObj interface{}) {
+				key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(newObj)
+				if err != nil {
+					c.logger.WithError(err).Fatal("Update")
+					return
+				}
+				c.queue.Add(key)
+			},
+		})
+
+	return c
+}
+
+func (c *RedisController) processQueue() bool {
+	k, shutdown := c.queue.Get()
+
+	if shutdown {
+		c.logger.Info("Shutting down queue")
+		return false
+	}
+
+	defer c.queue.Done(k)
+
+	c.logger.Debugf("Working on %s", k)
+
+	err := c.process(k.(string))
+
+	if err == nil {
+		c.logger.Debugf("Finished Working on %s", k)
+		c.queue.Forget(k)
+		return true
+	}
+
+	c.logger.Errorf("Re-queueing as encountered an error: %s", err.Error())
+
+	c.queue.AddRateLimited(k)
+
+	return true
+}
+
+func (c *RedisController) process(key string) error {
+
+	ns, name, err := cache.SplitMetaNamespaceKey(key)
+
+	if err != nil {
+		return err
+	}
+
+	obj, err := c.redisLister.Redises(ns).Get(name)
 
 	if err != nil {
 
-		if cr.ResourceAlreadyExistError(err) {
-			c.logger.Debug("Resource already exists")
-			return
+		if util.ResourceNotFoundError(err) {
+			delete(c.redises, name)
+			return c.deleteResources(ns, name)
 		}
 
-		c.logger.Fatal("API error", err)
+		return err
+	}
+
+	redisCopy, err := api.Scheme.DeepCopy(obj)
+
+	if err != nil {
+		return err
+	}
+
+	myRedis, exists := c.redises[name]
+
+	if !exists {
+
+		cfg := redis.Config{
+			RedisCRClient: c.redisClient,
+			RedisClient:   util.NewSentinelRedisClient(spec.GetSentinelServiceName(name)),
+		}
+
+		newRedis := redis.New(cfg, redisCopy.(*v1.Redis))
+
+		c.redises[name] = newRedis
+
+		if err := newRedis.ReportCreating(); err != nil {
+			return err
+		}
+
+		if err := c.reconcile(newRedis); err != nil {
+
+			return errors.NewAggregate([]error{
+				err,
+				newRedis.ReportFailed(),
+			})
+		}
+
+		return newRedis.ReportRunning()
 
 	}
 
+	myRedis.Redis = redisCopy.(*v1.Redis)
+
+	if err := c.reconcile(myRedis); err != nil {
+		return errors.NewAggregate([]error{
+			err,
+			myRedis.ReportFailed(),
+		})
+	}
+
+	return myRedis.ReportRunning()
+
 }
 
-func (c *RedisController) watch() (<-chan event.Event, <-chan error) {
-	eventCh := make(chan event.Event)
-	// On unexpected error case, controller should exit
-	errCh := make(chan error, 1)
+func (c *RedisController) workOnQueue() {
+	for c.processQueue() {
+	}
+}
+func (c *RedisController) Run(stopCh <-chan struct{}) {
 
-	watcher := cache.NewListWatchFromClient(c.redisClient.Client, spec.RedisNamePlural, v1.NamespaceAll, fields.Everything())
+	c.logger.Info("Starting controller")
 
-	_, controller := cache.NewInformer(watcher, &spec.RedisServer{}, 0, processor.New(eventCh, c.stopCh))
+	defer c.logger.Info("Exiting controller")
 
-	go controller.Run(c.stopCh)
+	if !cache.WaitForCacheSync(stopCh, c.cacheSyncs...) {
+		c.logger.Fatal("Timeout waiting for cache to sync")
+	}
 
-	return eventCh, errCh
+	c.logger.Info("Sync completed")
+
+	wait.Until(c.workOnQueue, time.Second, stopCh)
 }

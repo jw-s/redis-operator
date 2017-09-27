@@ -1,13 +1,13 @@
 package util
 
 import (
-	"encoding/json"
-	"fmt"
+	apiv1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/rest"
 	"net"
 	"os"
-
-	"github.com/JoelW-S/redis-operator/pkg/operator/spec"
-	"k8s.io/client-go/rest"
+	"time"
 )
 
 func InClusterConfig() (*rest.Config, error) {
@@ -26,23 +26,47 @@ func InClusterConfig() (*rest.Config, error) {
 	return rest.InClusterConfig()
 }
 
-func GetRedisServerList(restcli rest.Interface, ns string) (*spec.RedisServerList, error) {
-	b, err := restcli.Get().
-		RequestURI(
-			ListRedisListURI(ns)).
-		DoRaw()
+func WaitForResourceToBeEstablished(retries int, resourceFunc func() (bool, error)) error {
 
-	if err != nil {
-		return nil, err
-	}
+	return wait.ExponentialBackoff(
+		wait.Backoff{
+			Duration: time.Second,
+			Factor:   2.0,
+			Steps:    retries},
+		resourceFunc)
 
-	servers := &spec.RedisServerList{}
-	if err := json.Unmarshal(b, servers); err != nil {
-		return nil, err
-	}
-	return servers, nil
 }
 
-func ListRedisListURI(namespace string) string {
-	return fmt.Sprintf("/apis/%s/namespaces/%s/%s", spec.RedisNamePlural, namespace, spec.RedisNamePlural)
+func IsPodReady(pod *apiv1.Pod) bool {
+	conditions := pod.Status.Conditions
+	for _, condition := range conditions {
+		if condition.Type == apiv1.PodReady {
+			return true
+		}
+	}
+
+	return false
+}
+
+func CanServeService(endpoints *apiv1.Endpoints) bool {
+
+	for _, subset := range endpoints.Subsets {
+
+		if len(subset.Addresses) >= 1 {
+			return true
+		}
+	}
+	return false
+}
+
+func InPodPhase(phase apiv1.PodPhase, pod *apiv1.Pod) bool {
+	return phase == pod.Status.Phase
+}
+
+func ResourceAlreadyExistError(err error) bool {
+	return errors.IsAlreadyExists(err)
+}
+
+func ResourceNotFoundError(err error) bool {
+	return errors.IsNotFound(err)
 }

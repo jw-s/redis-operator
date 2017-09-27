@@ -1,0 +1,35 @@
+package: github.com/jw-s/redis-operator
+import:
+- package: github.com/golang/glog
+- package: github.com/sirupsen/logrus
+- package: k8s.io/api
+  version: release-1.8
+  subpackages:
+  - core/v1
+  - extensions/v1beta1
+- package: k8s.io/apimachinery
+  version: release-1.8
+  subpackages:
+  - pkg/api/errors
+  - pkg/apis/meta/v1
+  - pkg/conversion
+  - pkg/labels
+  - pkg/runtime
+  - pkg/runtime/schema
+  - pkg/runtime/serializer
+  - pkg/types
+  - pkg/util/intstr
+  - pkg/util/wait
+  - pkg/watch
+- package: k8s.io/client-go
+  version: release-5.0
+  subpackages:
+  - discovery
+  - discovery/fake
+  - kubernetes
+  - rest
+  - testing
+  - tools/cache
+  - util/flowcontrol
+- package: github.com/go-redis/redis
+  version: ~6.7.3

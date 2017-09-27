@@ -1,6 +1,4 @@
-vendor
-pkg
-cmd
+vendor/
 .gitignore
 .idea/
 *.iml

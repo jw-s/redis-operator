@@ -2,7 +2,7 @@ apiVersion: apiextensions.k8s.io/v1beta1
 kind: CustomResourceDefinition
 metadata:
   # name must match the spec fields below, and be in the form: <plural>.<group>
-  name: redisservers.operator.joelws.com
+  name: redises.operator.joelws.com
 spec:
   # group name to use for REST API: /apis/<group>/<version>
   group: operator.joelws.com
@@ -12,9 +12,9 @@ spec:
   scope: Namespaced
   names:
     # plural name to be used in the URL: /apis/<group>/<version>/<plural>
-    plural: redisservers
+    plural: redises
     # singular name to be used as an alias on the CLI and for display
-    singular: redisserver
+    singular: redis
     # kind is normally the CamelCased singular type. Your resource manifests use this.
-    kind: RedisServer
+    kind: Redis
     # shortNames allow shorter string to match your resource on the CLI
