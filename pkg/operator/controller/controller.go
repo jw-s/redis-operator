@@ -31,17 +31,18 @@ type Controller interface {
 type RedisController struct {
 	logger *logrus.Entry
 	Config
-	kubernetesClient kubernetes.Interface
-	redisClient      redisclient.RedisesGetter
-	cacheSyncs       []cache.InformerSynced
-	redisLister      redislister.RedisLister
-	podLister        v1lister.PodLister
-	deploymentLister v1beta1Lister.DeploymentLister
-	serviceLister    v1lister.ServiceLister
-	endpointsLister  v1lister.EndpointsLister
-	configMapLister  v1lister.ConfigMapLister
-	queue            workqueue.RateLimitingInterface
-	redises          map[string]*redis.Redis
+	kubernetesClient  kubernetes.Interface
+	redisClient       redisclient.RedisesGetter
+	cacheSyncs        []cache.InformerSynced
+	redisLister       redislister.RedisLister
+	podLister         v1lister.PodLister
+	deploymentLister  v1beta1Lister.DeploymentLister
+	serviceLister     v1lister.ServiceLister
+	endpointsLister   v1lister.EndpointsLister
+	configMapLister   v1lister.ConfigMapLister
+	statefulSetLister v1beta1Lister.StatefulSetLister
+	queue             workqueue.RateLimitingInterface
+	redises           map[string]*redis.Redis
 }
 
 type Config struct {
@@ -65,7 +66,8 @@ func New(cfg Config,
 	deploymentInformer v1beta1informer.DeploymentInformer,
 	serviceInformer v1informer.ServiceInformer,
 	endpointsInformer v1informer.EndpointsInformer,
-	configMapInformer v1informer.ConfigMapInformer) Controller {
+	configMapInformer v1informer.ConfigMapInformer,
+	statefulSetInformer v1beta1informer.StatefulSetInformer) Controller {
 
 	cacheSyncs := []cache.InformerSynced{
 		redisInformer.Informer().HasSynced,
@@ -74,22 +76,24 @@ func New(cfg Config,
 		serviceInformer.Informer().HasSynced,
 		endpointsInformer.Informer().HasSynced,
 		configMapInformer.Informer().HasSynced,
+		statefulSetInformer.Informer().HasSynced,
 	}
 
 	c := &RedisController{
-		logger:           logrus.WithField("pkg", "controller"),
-		Config:           cfg,
-		kubernetesClient: kubernetesClient,
-		redisClient:      redisClient,
-		cacheSyncs:       cacheSyncs,
-		redisLister:      redisInformer.Lister(),
-		podLister:        podInformer.Lister(),
-		deploymentLister: deploymentInformer.Lister(),
-		serviceLister:    serviceInformer.Lister(),
-		endpointsLister:  endpointsInformer.Lister(),
-		configMapLister:  configMapInformer.Lister(),
-		queue:            workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
-		redises:          make(map[string]*redis.Redis),
+		logger:            logrus.WithField("pkg", "controller"),
+		Config:            cfg,
+		kubernetesClient:  kubernetesClient,
+		redisClient:       redisClient,
+		cacheSyncs:        cacheSyncs,
+		redisLister:       redisInformer.Lister(),
+		podLister:         podInformer.Lister(),
+		deploymentLister:  deploymentInformer.Lister(),
+		serviceLister:     serviceInformer.Lister(),
+		endpointsLister:   endpointsInformer.Lister(),
+		configMapLister:   configMapInformer.Lister(),
+		statefulSetLister: statefulSetInformer.Lister(),
+		queue:             workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		redises:           make(map[string]*redis.Redis),
 	}
 
 	redisInformer.Informer().AddEventHandler(

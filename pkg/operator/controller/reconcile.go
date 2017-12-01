@@ -152,12 +152,12 @@ func (c *RedisController) sentinelConfigProcess(redis *redisv1.Redis) error {
 
 func (c *RedisController) slaveProcess(redis *redisv1.Redis) error {
 
-	actual, err := c.deploymentLister.Deployments(redis.Namespace).Get(spec.GetSlaveDeploymentName(redis.Name))
+	actual, err := c.statefulSetLister.StatefulSets(redis.Namespace).Get(spec.GetSlaveStatefulSetName(redis.Name))
 
 	if err != nil {
 		if util.ResourceNotFoundError(err) {
 
-			return c.createDesiredDeployment(redis, spec.SlaveDeployment)
+			return c.createDesiredStatefulSet(redis, spec.SlaveStatefulSet)
 		}
 
 		return err
@@ -169,7 +169,7 @@ func (c *RedisController) slaveProcess(redis *redisv1.Redis) error {
 		return err
 	}
 
-	return c.updateDeploymentToDesired(redis, obj.(*appsv1beta1.Deployment), spec.SlaveDeployment)
+	return c.updateStateFulSetToDesired(redis, obj.(*appsv1beta1.StatefulSet), spec.SlaveStatefulSet)
 
 }
 
@@ -250,6 +250,14 @@ func (c *RedisController) createDesiredDeployment(redis *redisv1.Redis, desiredF
 
 }
 
+func (c *RedisController) createDesiredStatefulSet(redis *redisv1.Redis, desiredFunction func(*redisv1.Redis) *appsv1beta1.StatefulSet) (err error) {
+
+	_, err = c.kubernetesClient.AppsV1beta1().StatefulSets(redis.Namespace).Create(desiredFunction(redis))
+
+	return
+
+}
+
 func (c *RedisController) createDesiredConfigMap(redis *redisv1.Redis, desiredFunction func(*redisv1.Redis) *apiv1.ConfigMap) (err error) {
 
 	_, err = c.kubernetesClient.CoreV1().ConfigMaps(redis.Namespace).Create(desiredFunction(redis))
@@ -295,6 +303,35 @@ func (c *RedisController) updateDeploymentToDesired(redis *redisv1.Redis, actual
 		}
 
 		_, err = c.kubernetesClient.AppsV1beta1().Deployments(redis.Namespace).Patch(actual.Name, types.StrategicMergePatchType, patch)
+
+		return err
+	}
+
+	return nil
+}
+
+func (c *RedisController) updateStateFulSetToDesired(redis *redisv1.Redis, actual *appsv1beta1.StatefulSet, desiredFunction func(*redisv1.Redis) *appsv1beta1.StatefulSet) error {
+
+	desired := desiredFunction(redis)
+
+	if !reflect.DeepEqual(actual, desired) {
+
+		actualJSON, err := json.Marshal(actual)
+		if err != nil {
+			return err
+		}
+		desiredJSON, err := json.Marshal(desired)
+		if err != nil {
+			return err
+		}
+
+		patch, err := strategicpatch.CreateTwoWayMergePatch(actualJSON, desiredJSON, appsv1beta1.StatefulSet{})
+
+		if err != nil {
+			return err
+		}
+
+		_, err = c.kubernetesClient.AppsV1beta1().StatefulSets(redis.Namespace).Patch(actual.Name, types.StrategicMergePatchType, patch)
 
 		return err
 	}
@@ -367,7 +404,7 @@ func (c *RedisController) deleteResources(namespace, name string) error {
 		return err
 	}
 
-	err = c.kubernetesClient.AppsV1beta1().Deployments(namespace).Delete(spec.GetSlaveDeploymentName(name), &metav1.DeleteOptions{PropagationPolicy: &deletePolicy})
+	err = c.kubernetesClient.AppsV1beta1().Deployments(namespace).Delete(spec.GetSlaveStatefulSetName(name), &metav1.DeleteOptions{PropagationPolicy: &deletePolicy})
 
 	if err != nil && !util.ResourceNotFoundError(err) {
 		return err
@@ -380,6 +417,18 @@ func (c *RedisController) deleteResources(namespace, name string) error {
 	}
 
 	err = c.kubernetesClient.CoreV1().Services(namespace).Delete(spec.GetSentinelServiceName(name), &metav1.DeleteOptions{PropagationPolicy: &deletePolicy})
+
+	if err != nil && !util.ResourceNotFoundError(err) {
+		return err
+	}
+
+	err = c.kubernetesClient.CoreV1().ConfigMaps(namespace).Delete(spec.GetSentinelConfigMapName(name), &metav1.DeleteOptions{PropagationPolicy: &deletePolicy})
+
+	if err != nil && !util.ResourceNotFoundError(err) {
+		return err
+	}
+
+	err = c.kubernetesClient.AppsV1beta1().StatefulSets(namespace).Delete(spec.GetSlaveStatefulSetName(name), &metav1.DeleteOptions{PropagationPolicy: &deletePolicy})
 
 	if err != nil && !util.ResourceNotFoundError(err) {
 		return err

@@ -54,7 +54,8 @@ func main() {
 		informerFactory.Apps().V1beta1().Deployments(),
 		informerFactory.Core().V1().Services(),
 		informerFactory.Core().V1().Endpoints(),
-		informerFactory.Core().V1().ConfigMaps())
+		informerFactory.Core().V1().ConfigMaps(),
+		informerFactory.Apps().V1beta1().StatefulSets())
 
 	go c.Run(doneChan)
 

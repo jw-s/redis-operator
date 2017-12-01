@@ -14,7 +14,8 @@ func GetSentinelConfigMapName(name string) string {
 func DefaultSentinelConfig(redis *v1.Redis) *apiv1.ConfigMap {
 	return &apiv1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: GetSentinelConfigMapName(redis.Name),
+			Name:      GetSentinelConfigMapName(redis.Name),
+			Namespace: redis.Namespace,
 			OwnerReferences: []metav1.OwnerReference{
 				redis.AsOwner(),
 			},

@@ -18,8 +18,9 @@ func MasterSeedPod(owner *v1.Redis) *apiv1.Pod {
 
 	return &apiv1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   GetMasterPodName(owner.Name),
-			Labels: SentinelLabelSelector(owner),
+			Name:      GetMasterPodName(owner.Name),
+			Namespace: owner.Namespace,
+			Labels:    SentinelLabelSelector(owner),
 			OwnerReferences: []metav1.OwnerReference{
 				owner.AsOwner(),
 			},
@@ -40,7 +41,8 @@ func SentinelDeployment(owner *v1.Redis) *appsv1beta1.Deployment {
 
 	return &appsv1beta1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: GetSentinelDeploymentName(owner.Name),
+			Name:      GetSentinelDeploymentName(owner.Name),
+			Namespace: owner.Namespace,
 			OwnerReferences: []metav1.OwnerReference{
 				owner.AsOwner(),
 			},
@@ -71,7 +73,7 @@ func SentinelDeployment(owner *v1.Redis) *appsv1beta1.Deployment {
 								fmt.Sprintf("%s/%s", ConfMountPath, ConfigMapConfKeyName),
 								fmt.Sprintf("%s/%s", DataMountPath, ConfigMapConfKeyName),
 							},
-							VolumeMounts: GetSentinelVolumeMounts(),
+							VolumeMounts: GetVolumeMounts(),
 						},
 					},
 					Volumes: []apiv1.Volume{
@@ -91,38 +93,6 @@ func SentinelDeployment(owner *v1.Redis) *appsv1beta1.Deployment {
 								EmptyDir: &apiv1.EmptyDirVolumeSource{},
 							},
 						},
-					},
-				},
-			},
-		},
-	}
-
-}
-func SlaveDeployment(owner *v1.Redis) *appsv1beta1.Deployment {
-
-	redis := RedisContainer(owner.Spec.BaseImage, owner.Spec.Version)
-
-	replicas := owner.Spec.Slaves.Replicas
-
-	return &appsv1beta1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: GetSlaveDeploymentName(owner.Name),
-			OwnerReferences: []metav1.OwnerReference{
-				owner.AsOwner(),
-			},
-		},
-		Spec: appsv1beta1.DeploymentSpec{
-			Replicas: &replicas,
-			Template: apiv1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: SlaveLabelSelector(owner),
-					OwnerReferences: []metav1.OwnerReference{
-						owner.AsOwner(),
-					},
-				},
-				Spec: apiv1.PodSpec{
-					Containers: []apiv1.Container{
-						RedisSlave(redis, owner),
 					},
 				},
 			},

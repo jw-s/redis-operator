@@ -12,8 +12,8 @@ func GetMasterPodName(name string) string {
 	return fmt.Sprintf(MasterPodName, name)
 }
 
-func GetSlaveDeploymentName(name string) string {
-	return fmt.Sprintf(SlaveDeploymentName, name)
+func GetSlaveStatefulSetName(name string) string {
+	return fmt.Sprintf(SlaveStatefulSetName, name)
 }
 
 func GetSentinelServiceName(name string) string {
@@ -28,7 +28,8 @@ func MasterService(owner *cr.Redis) *apiv1.Service {
 
 	return &apiv1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: GetMasterServiceName(owner.Name),
+			Name:      GetMasterServiceName(owner.Name),
+			Namespace: owner.Namespace,
 			OwnerReferences: []metav1.OwnerReference{
 				owner.AsOwner(),
 			},
@@ -51,7 +52,8 @@ func MasterServiceEndpoint(owner *cr.Redis, IPAddress string) *apiv1.Endpoints {
 
 	return &apiv1.Endpoints{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: GetMasterServiceName(owner.Name),
+			Name:      GetMasterServiceName(owner.Name),
+			Namespace: owner.Namespace,
 			OwnerReferences: []metav1.OwnerReference{
 				owner.AsOwner(),
 			},
@@ -79,7 +81,8 @@ func SentinelService(owner *cr.Redis) *apiv1.Service {
 
 	return &apiv1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: GetSentinelServiceName(owner.Name),
+			Name:      GetSentinelServiceName(owner.Name),
+			Namespace: owner.Namespace,
 			OwnerReferences: []metav1.OwnerReference{
 				owner.AsOwner(),
 			},

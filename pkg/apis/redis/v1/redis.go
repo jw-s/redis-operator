@@ -1,10 +1,10 @@
 package v1
 
 import (
-	"errors"
 	"github.com/sirupsen/logrus"
+	"k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"strings"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -96,14 +96,7 @@ const (
 )
 
 type PodPolicy struct {
-	Labels map[string]string `json:"labels,omitempty"`
-
-	// NodeSelector specifies a map of key-value pairs. For the pod to be eligible
-	// to run on a node, the node must have each of the indicated key-value pairs as
-	// labels.
-	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
-
-	AntiAffinity bool `json:"antiAffinity,omitempty"`
+	Resources v1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 type ServerStatus struct {
@@ -207,17 +200,6 @@ func (ss *ServerStatus) markCondition(sc ServerCondition) {
 
 }
 
-func (s *ServerSpec) Validate() error {
-	if s.Pod != nil {
-		for k := range s.Pod.Labels {
-			if k == "app" || strings.HasPrefix(k, "redis_") {
-				return errors.New("spec: pod labels contains reserved label")
-			}
-		}
-	}
-	return nil
-}
-
 func (s *ServerSpec) ApplyDefaults() {
 	if len(s.BaseImage) == 0 {
 		s.BaseImage = defaultBaseImage
@@ -229,6 +211,16 @@ func (s *ServerSpec) ApplyDefaults() {
 
 	if s.Sentinels.Replicas != 0 && s.Sentinels.Replicas%2 == 0 {
 		logrus.Warn("Redis sentinels should be an odd number to prevent ties!")
+	}
+
+	if s.Pod == nil {
+		s.Pod = &PodPolicy{
+			Resources: v1.ResourceRequirements{
+				Requests: v1.ResourceList{
+					v1.ResourceStorage: resource.MustParse("10Mi"),
+				},
+			},
+		}
 	}
 }
 

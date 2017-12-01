@@ -11,14 +11,14 @@ func GetRedisMasterName(redis *v1.Redis) string {
 	return redis.Name
 }
 
-func GetSentinelVolumeMounts() []apiv1.VolumeMount {
+func GetVolumeMounts() []apiv1.VolumeMount {
 	return []apiv1.VolumeMount{
 		{
-			Name:      "config",
+			Name:      ConfigVolumeName,
 			MountPath: ConfMountPath,
 		},
 		{
-			Name:      "data",
+			Name:      DataVolumeName,
 			MountPath: DataMountPath,
 		},
 	}
@@ -45,7 +45,7 @@ func RedisSentinel(container apiv1.Container) apiv1.Container {
 		},
 	}
 
-	container.VolumeMounts = GetSentinelVolumeMounts()
+	container.VolumeMounts = GetVolumeMounts()
 
 	container.Args = []string{
 		fmt.Sprintf("%s/%s", DataMountPath, ConfigMapConfKeyName),
@@ -79,6 +79,13 @@ func RedisSlave(redis apiv1.Container, spec *v1.Redis) apiv1.Container {
 			Name:          "main",
 			ContainerPort: int32(RedisPort),
 			Protocol:      apiv1.ProtocolTCP,
+		},
+	}
+
+	redis.VolumeMounts = []apiv1.VolumeMount{
+		{
+			Name:      SlavePersistentVolumeClaimName,
+			MountPath: DataMountPath,
 		},
 	}
 
