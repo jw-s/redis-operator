@@ -40,6 +40,7 @@ func (c *Redis) AsOwner() metav1.OwnerReference {
 const (
 	defaultBaseImage = "redis"
 	defaultVersion   = "4.0-alpine"
+	DefaultPVSize				   = "500Mi"
 )
 
 type ServerSpec struct {
@@ -202,10 +203,12 @@ func (ss *ServerStatus) markCondition(sc ServerCondition) {
 
 func (s *ServerSpec) ApplyDefaults() {
 	if len(s.BaseImage) == 0 {
+		logrus.Warnf("Using default image: %s", defaultBaseImage)
 		s.BaseImage = defaultBaseImage
 	}
 
 	if len(s.Version) == 0 {
+		logrus.Warnf("Using default image version: %s", defaultVersion)
 		s.Version = defaultVersion
 	}
 
@@ -214,19 +217,22 @@ func (s *ServerSpec) ApplyDefaults() {
 	}
 
 	if s.Pod == nil {
+		logrus.Warnf("Using default size for PV's: %s", DefaultPVSize)
 		s.Pod = &PodPolicy{
 			Resources: v1.ResourceRequirements{
 				Requests: v1.ResourceList{
-					v1.ResourceStorage: resource.MustParse("10Mi"),
+					v1.ResourceStorage: resource.MustParse(DefaultPVSize),
 				},
 			},
 		}
 	}
 }
 
-func (s *SentinelSpec) ApplyDefaults(configMapName ConfigMap) {
+func (s *SentinelSpec) ApplyDefaults(name string) {
 
 	if len(s.ConfigMap) == 0 {
-		s.ConfigMap = configMapName
+		logrus.Warnf("Using default configMap version: %s", name)
+		logrus.Warnf("This configMap will be created if it doesn't already exist.")
+		s.ConfigMap = ConfigMap(name)
 	}
 }

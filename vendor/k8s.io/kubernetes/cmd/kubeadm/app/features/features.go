@@ -30,30 +30,36 @@ const (
 	// HighAvailability is alpha in v1.9
 	HighAvailability = "HighAvailability"
 
-	// SelfHosting is beta in v1.8
+	// CoreDNS is alpha in v1.9
+	CoreDNS = "CoreDNS"
+
+	// SelfHosting is alpha in v1.8 and v1.9
 	SelfHosting = "SelfHosting"
 
-	// StoreCertsInSecrets is alpha in v1.8
+	// StoreCertsInSecrets is alpha in v1.8 and v1.9
 	StoreCertsInSecrets = "StoreCertsInSecrets"
 
-	// SupportIPVSProxyMode is alpha in v1.8
-	SupportIPVSProxyMode = "SupportIPVSProxyMode"
+	// DynamicKubeletConfig is alpha in v1.9
+	DynamicKubeletConfig = "DynamicKubeletConfig"
 )
 
 var v190 = version.MustParseSemantic("v1.9.0-alpha.1")
 
 // InitFeatureGates are the default feature gates for the init command
 var InitFeatureGates = FeatureList{
-	SelfHosting:          {FeatureSpec: utilfeature.FeatureSpec{Default: false, PreRelease: utilfeature.Beta}},
-	StoreCertsInSecrets:  {FeatureSpec: utilfeature.FeatureSpec{Default: false, PreRelease: utilfeature.Alpha}},
-	HighAvailability:     {FeatureSpec: utilfeature.FeatureSpec{Default: false, PreRelease: utilfeature.Alpha}, MinimumVersion: v190},
-	SupportIPVSProxyMode: {FeatureSpec: utilfeature.FeatureSpec{Default: false, PreRelease: utilfeature.Alpha}, MinimumVersion: v190},
+	SelfHosting:         {FeatureSpec: utilfeature.FeatureSpec{Default: false, PreRelease: utilfeature.Alpha}},
+	StoreCertsInSecrets: {FeatureSpec: utilfeature.FeatureSpec{Default: false, PreRelease: utilfeature.Alpha}},
+	// We don't want to advertise this feature gate exists in v1.9 to avoid confusion as it is not yet working
+	HighAvailability:     {FeatureSpec: utilfeature.FeatureSpec{Default: false, PreRelease: utilfeature.Alpha}, MinimumVersion: v190, HiddenInHelpText: true},
+	CoreDNS:              {FeatureSpec: utilfeature.FeatureSpec{Default: false, PreRelease: utilfeature.Alpha}, MinimumVersion: v190},
+	DynamicKubeletConfig: {FeatureSpec: utilfeature.FeatureSpec{Default: false, PreRelease: utilfeature.Alpha}, MinimumVersion: v190},
 }
 
 // Feature represents a feature being gated
 type Feature struct {
 	utilfeature.FeatureSpec
-	MinimumVersion *version.Version
+	MinimumVersion   *version.Version
+	HiddenInHelpText bool
 }
 
 // FeatureList represents a list of feature gates
@@ -109,6 +115,10 @@ func Keys(featureList FeatureList) []string {
 func KnownFeatures(f *FeatureList) []string {
 	var known []string
 	for k, v := range *f {
+		if v.HiddenInHelpText {
+			continue
+		}
+
 		pre := ""
 		if v.PreRelease != utilfeature.GA {
 			pre = fmt.Sprintf("%s - ", v.PreRelease)
@@ -119,7 +129,7 @@ func KnownFeatures(f *FeatureList) []string {
 	return known
 }
 
-// NewFeatureGate parse a string of the form "key1=value1,key2=value2,..." into a
+// NewFeatureGate parses a string of the form "key1=value1,key2=value2,..." into a
 // map[string]bool of known keys or returns an error.
 func NewFeatureGate(f *FeatureList, value string) (map[string]bool, error) {
 	featureGate := map[string]bool{}
@@ -147,5 +157,22 @@ func NewFeatureGate(f *FeatureList, value string) (map[string]bool, error) {
 		featureGate[k] = boolValue
 	}
 
+	ResolveFeatureGateDependencies(featureGate)
+
 	return featureGate, nil
+}
+
+// ResolveFeatureGateDependencies resolve dependencies between feature gates
+func ResolveFeatureGateDependencies(featureGate map[string]bool) {
+
+	// if StoreCertsInSecrets enabled, SelfHosting should enabled
+	if Enabled(featureGate, StoreCertsInSecrets) {
+		featureGate[SelfHosting] = true
+	}
+
+	// if HighAvailability enabled, both StoreCertsInSecrets and SelfHosting should enabled
+	if Enabled(featureGate, HighAvailability) && !Enabled(featureGate, StoreCertsInSecrets) {
+		featureGate[SelfHosting] = true
+		featureGate[StoreCertsInSecrets] = true
+	}
 }

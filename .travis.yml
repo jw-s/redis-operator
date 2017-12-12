@@ -1,0 +1,20 @@
+sudo: required
+
+language: go
+
+go:
+- 1.9
+
+services:
+- docker
+
+before_install:
+- wget "https://github.com/Masterminds/glide/releases/download/v0.13.1/glide-v0.13.1-linux-amd64.tar.gz"
+- mkdir -p $HOME/bin
+- tar -vxz -C $HOME/bin --strip=1 -f glide-v0.13.1-linux-amd64.tar.gz
+- export PATH="$HOME/bin:$PATH"
+- docker login -u "$DOCKER_USER" -p "$DOCKER_PASS"
+
+script:
+- make build
+- make push

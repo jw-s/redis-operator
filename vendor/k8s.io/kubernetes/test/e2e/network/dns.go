@@ -169,35 +169,20 @@ func assertFilesContain(fileNames []string, fileDir string, pod *v1.Pod, client 
 
 	framework.ExpectNoError(wait.Poll(time.Second*10, time.Second*600, func() (bool, error) {
 		failed = []string{}
-		subResourceProxyAvailable, err := framework.ServerVersionGTE(framework.SubResourcePodProxyVersion, client.Discovery())
-		if err != nil {
-			return false, err
-		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), framework.SingleCallTimeout)
 		defer cancel()
 
-		var contents []byte
 		for _, fileName := range fileNames {
-			if subResourceProxyAvailable {
-				contents, err = client.CoreV1().RESTClient().Get().
-					Context(ctx).
-					Namespace(pod.Namespace).
-					Resource("pods").
-					SubResource("proxy").
-					Name(pod.Name).
-					Suffix(fileDir, fileName).
-					Do().Raw()
-			} else {
-				contents, err = client.CoreV1().RESTClient().Get().
-					Context(ctx).
-					Prefix("proxy").
-					Resource("pods").
-					Namespace(pod.Namespace).
-					Name(pod.Name).
-					Suffix(fileDir, fileName).
-					Do().Raw()
-			}
+			contents, err := client.CoreV1().RESTClient().Get().
+				Context(ctx).
+				Namespace(pod.Namespace).
+				Resource("pods").
+				SubResource("proxy").
+				Name(pod.Name).
+				Suffix(fileDir, fileName).
+				Do().Raw()
+
 			if err != nil {
 				if ctx.Err() != nil {
 					framework.Failf("Unable to read %s from pod %s: %v", fileName, pod.Name, err)
@@ -284,6 +269,10 @@ func reverseArray(arr []string) []string {
 var _ = SIGDescribe("DNS", func() {
 	f := framework.NewDefaultFramework("dns")
 
+	/*
+	   Testname: dns-for-clusters
+	   Description: Make sure that DNS can resolve the names of clusters.
+	*/
 	framework.ConformanceIt("should provide DNS for the cluster ", func() {
 		// All the names we need to be able to resolve.
 		// TODO: Spin up a separate test service and test that dns works for that service.
@@ -310,6 +299,10 @@ var _ = SIGDescribe("DNS", func() {
 		validateDNSResults(f, pod, append(wheezyFileNames, jessieFileNames...))
 	})
 
+	/*
+	   Testname: dns-for-services
+	   Description: Make sure that DNS can resolve the names of services.
+	*/
 	framework.ConformanceIt("should provide DNS for services ", func() {
 		// Create a test headless service.
 		By("Creating a test headless service")

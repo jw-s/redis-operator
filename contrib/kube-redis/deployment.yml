@@ -12,7 +12,7 @@ spec:
         app: redis-operator
     spec:
       containers:
-      - image: redis-operator:latest
+      - image: joelws/redis-operator:latest
         imagePullPolicy: Never
         name: redis-operator
         resources:

@@ -13,7 +13,6 @@ var (
 
 const (
 	CRDResourceKind = "Redis"
-	RedisNamePlural = "redises"
 	RedisGroupName  = "operator.joelws.com"
 )
 

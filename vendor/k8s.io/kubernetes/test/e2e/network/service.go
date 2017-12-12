@@ -20,6 +20,8 @@ import (
 	"bytes"
 	"fmt"
 	"math/rand"
+	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -481,7 +483,8 @@ var _ = SIGDescribe("Services", func() {
 		}
 	})
 
-	It("should be able to change the type and ports of a service [Slow]", func() {
+	// TODO: Get rid of [DisabledForLargeClusters] tag when issue #52495 is fixed.
+	It("should be able to change the type and ports of a service [Slow] [DisabledForLargeClusters]", func() {
 		// requires cloud load-balancer support
 		framework.SkipUnlessProviderIs("gce", "gke", "aws")
 
@@ -800,6 +803,53 @@ var _ = SIGDescribe("Services", func() {
 		if loadBalancerSupportsUDP {
 			By("checking the UDP LoadBalancer is closed")
 			jig.TestNotReachableUDP(udpIngressIP, svcPort, loadBalancerLagTimeout)
+		}
+	})
+
+	It("should be able to update NodePorts with two same port numbers but different protocols", func() {
+		serviceName := "nodeport-update-service"
+		ns := f.Namespace.Name
+		jig := framework.NewServiceTestJig(cs, serviceName)
+
+		By("creating a TCP service " + serviceName + " with type=ClusterIP in namespace " + ns)
+		tcpService := jig.CreateTCPServiceOrFail(ns, nil)
+		defer func() {
+			framework.Logf("Cleaning up the updating NodePorts test service")
+			err := cs.Core().Services(ns).Delete(serviceName, nil)
+			Expect(err).NotTo(HaveOccurred())
+		}()
+		jig.SanityCheckService(tcpService, v1.ServiceTypeClusterIP)
+		svcPort := int(tcpService.Spec.Ports[0].Port)
+		framework.Logf("service port TCP: %d", svcPort)
+
+		// Change the services to NodePort and add a UDP port.
+
+		By("changing the TCP service to type=NodePort and add a UDP port")
+		newService := jig.UpdateServiceOrFail(ns, tcpService.Name, func(s *v1.Service) {
+			s.Spec.Type = v1.ServiceTypeNodePort
+			s.Spec.Ports = []v1.ServicePort{
+				{
+					Name:     "tcp-port",
+					Port:     80,
+					Protocol: v1.ProtocolTCP,
+				},
+				{
+					Name:     "udp-port",
+					Port:     80,
+					Protocol: v1.ProtocolUDP,
+				},
+			}
+		})
+		jig.SanityCheckService(newService, v1.ServiceTypeNodePort)
+		if len(newService.Spec.Ports) != 2 {
+			framework.Failf("new service should have two Ports")
+		}
+		for _, port := range newService.Spec.Ports {
+			if port.NodePort == 0 {
+				framework.Failf("new service failed to allocate NodePort for Port %s", port.Name)
+			}
+
+			framework.Logf("new service allocates NodePort %d for Port %s", port.NodePort, port.Name)
 		}
 	})
 
@@ -1351,11 +1401,9 @@ var _ = SIGDescribe("Services", func() {
 		framework.CheckReachabilityFromPod(true, normalReachabilityTimeout, namespace, dropPodName, svcIP)
 	})
 
-	It("should be able to create an internal type load balancer [Slow]", func() {
+	// TODO: Get rid of [DisabledForLargeClusters] tag when issue #52495 is fixed.
+	It("should be able to create an internal type load balancer [Slow] [DisabledForLargeClusters]", func() {
 		framework.SkipUnlessProviderIs("azure", "gke", "gce")
-		if framework.ProviderIs("gke", "gce") {
-			framework.SkipUnlessNodeCountIsAtMost(framework.GCPMaxInstancesInInstanceGroup)
-		}
 
 		createTimeout := framework.LoadBalancerCreateTimeoutDefault
 		if nodes := framework.GetReadySchedulableNodesOrDie(cs); len(nodes.Items) > framework.LargeClusterMinNodesNumber {
@@ -1439,7 +1487,8 @@ var _ = SIGDescribe("Services", func() {
 	})
 })
 
-var _ = SIGDescribe("ESIPP [Slow]", func() {
+// TODO: Get rid of [DisabledForLargeClusters] tag when issue #52495 is fixed.
+var _ = SIGDescribe("ESIPP [Slow] [DisabledForLargeClusters]", func() {
 	f := framework.NewDefaultFramework("esipp")
 	loadBalancerCreateTimeout := framework.LoadBalancerCreateTimeoutDefault
 
@@ -1585,7 +1634,9 @@ var _ = SIGDescribe("ESIPP [Slow]", func() {
 				// Confirm traffic can reach backend through LB before checking healthcheck nodeport.
 				jig.TestReachableHTTP(ingressIP, svcTCPPort, framework.KubeProxyLagTimeout)
 				expectedSuccess := nodes.Items[n].Name == endpointNodeName
-				framework.Logf("Health checking %s, http://%s:%d%s, expectedSuccess %v", nodes.Items[n].Name, publicIP, healthCheckNodePort, path, expectedSuccess)
+				port := strconv.Itoa(healthCheckNodePort)
+				ipPort := net.JoinHostPort(publicIP, port)
+				framework.Logf("Health checking %s, http://%s%s, expectedSuccess %v", nodes.Items[n].Name, ipPort, path, expectedSuccess)
 				Expect(jig.TestHTTPHealthCheckNodePort(publicIP, healthCheckNodePort, path, framework.KubeProxyEndpointLagTimeout, expectedSuccess, threshold)).NotTo(HaveOccurred())
 			}
 			framework.ExpectNoError(framework.DeleteRCAndPods(f.ClientSet, f.InternalClientset, namespace, serviceName))
@@ -1606,7 +1657,9 @@ var _ = SIGDescribe("ESIPP [Slow]", func() {
 		}()
 
 		ingressIP := framework.GetIngressPoint(&svc.Status.LoadBalancer.Ingress[0])
-		path := fmt.Sprintf("%s:%d/clientip", ingressIP, int(svc.Spec.Ports[0].Port))
+		port := strconv.Itoa(int(svc.Spec.Ports[0].Port))
+		ipPort := net.JoinHostPort(ingressIP, port)
+		path := fmt.Sprintf("%s/clientip", ipPort)
 		nodeName := nodes.Items[0].Name
 		podName := "execpod-sourceip"
 
@@ -1757,9 +1810,10 @@ func execSourceipTest(f *framework.Framework, c clientset.Interface, ns, nodeNam
 	framework.ExpectNoError(err)
 
 	var stdout string
+	serviceIPPort := net.JoinHostPort(serviceIP, strconv.Itoa(servicePort))
 	timeout := 2 * time.Minute
-	framework.Logf("Waiting up to %v wget %s:%d", timeout, serviceIP, servicePort)
-	cmd := fmt.Sprintf(`wget -T 30 -qO- %s:%d | grep client_address`, serviceIP, servicePort)
+	framework.Logf("Waiting up to %v wget %s", timeout, serviceIPPort)
+	cmd := fmt.Sprintf(`wget -T 30 -qO- %s | grep client_address`, serviceIPPort)
 	for start := time.Now(); time.Since(start) < timeout; time.Sleep(2) {
 		stdout, err = framework.RunHostCmd(execPod.Namespace, execPod.Name, cmd)
 		if err != nil {

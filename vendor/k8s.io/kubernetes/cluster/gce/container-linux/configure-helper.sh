@@ -215,14 +215,19 @@ EOF
   if [[ -n "${NODE_INSTANCE_PREFIX:-}" ]]; then
     use_cloud_config="true"
     if [[ -n "${NODE_TAGS:-}" ]]; then
-      local -r node_tags="${NODE_TAGS}"
+      # split NODE_TAGS into an array by comma.
+      IFS=',' read -r -a node_tags <<< ${NODE_TAGS}
     else
       local -r node_tags="${NODE_INSTANCE_PREFIX}"
     fi
     cat <<EOF >>/etc/gce.conf
-node-tags = ${node_tags}
 node-instance-prefix = ${NODE_INSTANCE_PREFIX}
 EOF
+    for tag in ${node_tags[@]}; do
+      cat <<EOF >>/etc/gce.conf
+node-tags = ${tag}
+EOF
+    done
   fi
   if [[ -n "${MULTIZONE:-}" ]]; then
     use_cloud_config="true"
@@ -232,9 +237,13 @@ EOF
   fi
   if [[ -n "${GCE_ALPHA_FEATURES:-}" ]]; then
     use_cloud_config="true"
-    cat <<EOF >>/etc/gce.conf
-alpha-features = ${GCE_ALPHA_FEATURES}
+    # split GCE_ALPHA_FEATURES into an array by comma.
+    IFS=',' read -r -a alpha_features <<< ${GCE_ALPHA_FEATURES}
+    for feature in ${alpha_features[@]}; do
+      cat <<EOF >>/etc/gce.conf
+alpha-features = ${feature}
 EOF
+    done
   fi
   if [[ -n "${SECONDARY_RANGE_NAME:-}" ]]; then
     use_cloud_config="true"
@@ -597,6 +606,9 @@ function start-kubelet {
   fi
   if [[ -n "${NODE_LABELS:-}" ]]; then
     node_labels="${node_labels:+${node_labels},}${NODE_LABELS}"
+  fi
+  if [[ -n "${NON_MASTER_NODE_LABELS:-}" && "${KUBERNETES_MASTER:-}" != "true" ]]; then
+    node_labels="${node_labels:+${node_labels},}${NON_MASTER_NODE_LABELS}"
   fi
   if [[ -n "${node_labels:-}" ]]; then
     flags+=" --node-labels=${node_labels}"
@@ -1225,6 +1237,36 @@ function update-prometheus-to-sd-parameters {
   fi
 }
 
+# Sets up the manifests of coreDNS for k8s addons.
+function setup-coredns-manifest {
+  local -r coredns_file="${dst_dir}/dns/coredns.yaml"
+  mv "${dst_dir}/dns/coredns.yaml.in" "${coredns_file}"
+  # Replace the salt configurations with variable values.
+  sed -i -e "s@{{ *pillar\['dns_domain'\] *}}@${DNS_DOMAIN}@g" "${coredns_file}"
+  sed -i -e "s@{{ *pillar\['dns_server'\] *}}@${DNS_SERVER_IP}@g" "${coredns_file}"
+  sed -i -e "s@{{ *pillar\['service_cluster_ip_range'\] *}}@${SERVICE_CLUSTER_IP_RANGE}@g" "${coredns_file}"
+}
+
+# Sets up the manifests of kube-dns for k8s addons.
+function setup-kube-dns-manifest {
+  local -r kubedns_file="${dst_dir}/dns/kube-dns.yaml"
+  mv "${dst_dir}/dns/kube-dns.yaml.in" "${kubedns_file}"
+  if [ -n "${CUSTOM_KUBE_DNS_YAML:-}" ]; then
+    # Replace with custom GKE kube-dns deployment.
+    cat > "${kubedns_file}" <<EOF
+$(echo "$CUSTOM_KUBE_DNS_YAML")
+EOF
+    update-prometheus-to-sd-parameters ${kubedns_file}
+  fi
+  # Replace the salt configurations with variable values.
+  sed -i -e "s@{{ *pillar\['dns_domain'\] *}}@${DNS_DOMAIN}@g" "${kubedns_file}"
+  sed -i -e "s@{{ *pillar\['dns_server'\] *}}@${DNS_SERVER_IP}@g" "${kubedns_file}"
+
+  if [[ "${ENABLE_DNS_HORIZONTAL_AUTOSCALER:-}" == "true" ]]; then
+    setup-addon-manifests "addons" "dns-horizontal-autoscaler"
+  fi
+}
+
 # Prepares the manifests of k8s addons, and starts the addon manager.
 # Vars assumed:
 #   CLUSTER_NAME
@@ -1238,6 +1280,13 @@ function start-kube-addons {
 
   # Set up manifests of other addons.
   if [[ "${KUBE_PROXY_DAEMONSET:-}" == "true" ]]; then
+    if [ -n "${CUSTOM_KUBE_PROXY_YAML:-}" ]; then
+      # Replace with custom GKE kube proxy.
+      cat > "$src_dir/kube-proxy/kube-proxy-ds.yaml" <<EOF
+$(echo "$CUSTOM_KUBE_PROXY_YAML")
+EOF
+      update-prometheus-to-sd-parameters "$src_dir/kube-proxy/kube-proxy-ds.yaml"
+    fi
     prepare-kube-proxy-manifest-variables "$src_dir/kube-proxy/kube-proxy-ds.yaml"
     setup-addon-manifests "addons" "kube-proxy"
   fi
@@ -1269,6 +1318,7 @@ function start-kube-addons {
       controller_yaml="${controller_yaml}/heapster-controller.yaml"
     fi
     remove-salt-config-comments "${controller_yaml}"
+
     sed -i -e "s@{{ cluster_name }}@${CLUSTER_NAME}@g" "${controller_yaml}"
     sed -i -e "s@{{ *base_metrics_memory *}}@${base_metrics_memory}@g" "${controller_yaml}"
     sed -i -e "s@{{ *base_metrics_cpu *}}@${base_metrics_cpu}@g" "${controller_yaml}"
@@ -1278,27 +1328,37 @@ function start-kube-addons {
     sed -i -e "s@{{ *nanny_memory *}}@${nanny_memory}@g" "${controller_yaml}"
     sed -i -e "s@{{ *metrics_cpu_per_node *}}@${metrics_cpu_per_node}@g" "${controller_yaml}"
     update-prometheus-to-sd-parameters ${controller_yaml}
+
+    if [[ "${ENABLE_CLUSTER_MONITORING:-}" == "stackdriver" ]]; then
+      use_old_resources="${HEAPSTER_USE_OLD_STACKDRIVER_RESOURCES:-true}"
+      use_new_resources="${HEAPSTER_USE_NEW_STACKDRIVER_RESOURCES:-false}"
+      sed -i -e "s@{{ use_old_resources }}@${use_old_resources}@g" "${controller_yaml}"
+      sed -i -e "s@{{ use_new_resources }}@${use_new_resources}@g" "${controller_yaml}"
+    fi
+  fi
+  if [[ "${ENABLE_CLUSTER_MONITORING:-}" == "stackdriver" ]] ||
+     ([[ "${ENABLE_CLUSTER_LOGGING:-}" == "true" ]] &&
+     [[ "${LOGGING_DESTINATION:-}" == "gcp" ]]); then
+    if [[ "${ENABLE_METADATA_AGENT:-}" == "stackdriver" ]] &&
+       [[ "${METADATA_AGENT_VERSION:-}" != "" ]]; then
+      metadata_agent_cpu_request="${METADATA_AGENT_CPU_REQUEST:-40m}"
+      metadata_agent_memory_request="${METADATA_AGENT_MEMORY_REQUEST:-50Mi}"
+      setup-addon-manifests "addons" "metadata-agent/stackdriver"
+      daemon_set_yaml="${dst_dir}/metadata-agent/stackdriver/metadata-agent.yaml"
+      sed -i -e "s@{{ metadata_agent_version }}@${METADATA_AGENT_VERSION}@g" "${daemon_set_yaml}"
+      sed -i -e "s@{{ metadata_agent_cpu_request }}@${metadata_agent_cpu_request}@g" "${daemon_set_yaml}"
+      sed -i -e "s@{{ metadata_agent_memory_request }}@${metadata_agent_memory_request}@g" "${daemon_set_yaml}"
+    fi
   fi
   if [[ "${ENABLE_METRICS_SERVER:-}" == "true" ]]; then
     setup-addon-manifests "addons" "metrics-server"
   fi
   if [[ "${ENABLE_CLUSTER_DNS:-}" == "true" ]]; then
     setup-addon-manifests "addons" "dns"
-    local -r kubedns_file="${dst_dir}/dns/kube-dns.yaml"
-    mv "${dst_dir}/dns/kube-dns.yaml.in" "${kubedns_file}"
-    if [ -n "${CUSTOM_KUBE_DNS_YAML:-}" ]; then
-      # Replace with custom GKE kube-dns deployment.
-      cat > "${kubedns_file}" <<EOF
-$(echo "$CUSTOM_KUBE_DNS_YAML")
-EOF
-      update-prometheus-to-sd-parameters ${kubedns_file}
-    fi
-    # Replace the salt configurations with variable values.
-    sed -i -e "s@{{ *pillar\['dns_domain'\] *}}@${DNS_DOMAIN}@g" "${kubedns_file}"
-    sed -i -e "s@{{ *pillar\['dns_server'\] *}}@${DNS_SERVER_IP}@g" "${kubedns_file}"
-
-    if [[ "${ENABLE_DNS_HORIZONTAL_AUTOSCALER:-}" == "true" ]]; then
-      setup-addon-manifests "addons" "dns-horizontal-autoscaler"
+    if [[ "${CLUSTER_DNS_CORE_DNS:-}" == "true" ]]; then
+      setup-coredns-manifest
+    else
+      setup-kube-dns-manifest
     fi
   fi
   if [[ "${ENABLE_CLUSTER_REGISTRY:-}" == "true" ]]; then
@@ -1344,6 +1404,11 @@ EOF
   fi
   if [[ "${ENABLE_DEFAULT_STORAGE_CLASS:-}" == "true" ]]; then
     setup-addon-manifests "addons" "storage-class/gce"
+  fi
+  if [[ "${ENABLE_METADATA_CONCEALMENT:-}" == "true" ]]; then
+    setup-addon-manifests "addons" "metadata-proxy/gce"
+    local -r metadata_proxy_yaml="${dst_dir}/metadata-proxy/gce/metadata-proxy.yaml"
+    update-prometheus-to-sd-parameters ${metadata_proxy_yaml}
   fi
 
   # Place addon manager pod manifest.
@@ -1494,7 +1559,7 @@ else
   fi
 fi
 
-if [[ "${CONTAINER_RUNTIME:-}" == "rkt" ]]; then
+if [[ "${KUBERNETES_CONTAINER_RUNTIME:-}" == "rkt" ]]; then
   systemctl stop docker
   systemctl disable docker
   setup-rkt

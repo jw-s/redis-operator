@@ -36,8 +36,8 @@ import (
 	"k8s.io/apiserver/pkg/admission"
 	"k8s.io/apiserver/pkg/util/webhook"
 	"k8s.io/client-go/rest"
-	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/legacyscheme"
+	api "k8s.io/kubernetes/pkg/apis/core"
 
 	// install the clientgo image policy API for use with api registry
 	_ "k8s.io/kubernetes/pkg/apis/imagepolicy/install"
@@ -68,6 +68,8 @@ type Plugin struct {
 	retryBackoff  time.Duration
 	defaultAllow  bool
 }
+
+var _ admission.ValidationInterface = &Plugin{}
 
 func (a *Plugin) statusTTL(status v1alpha1.ImageReviewStatus) time.Duration {
 	if status.Allowed {
@@ -107,8 +109,8 @@ func (a *Plugin) webhookError(pod *api.Pod, attributes admission.Attributes, err
 	return nil
 }
 
-// Admit makes an admission decision based on the request attributes
-func (a *Plugin) Admit(attributes admission.Attributes) (err error) {
+// Validate makes an admission decision based on the request attributes
+func (a *Plugin) Validate(attributes admission.Attributes) (err error) {
 	// Ignore all calls to subresources or resources other than pods.
 	if attributes.GetSubresource() != "" || attributes.GetResource().GroupResource() != api.Resource("pods") {
 		return nil
@@ -217,6 +219,10 @@ func (a *Plugin) admitPod(pod *api.Pod, attributes admission.Attributes, review 
 // For additional HTTP configuration, refer to the kubeconfig documentation
 // http://kubernetes.io/v1.1/docs/user-guide/kubeconfig-file.html.
 func NewImagePolicyWebhook(configFile io.Reader) (*Plugin, error) {
+	if configFile == nil {
+		return nil, fmt.Errorf("no config specified")
+	}
+
 	// TODO: move this to a versioned configuration file format
 	var config AdmissionConfig
 	d := yaml.NewYAMLOrJSONDecoder(configFile, 4096)

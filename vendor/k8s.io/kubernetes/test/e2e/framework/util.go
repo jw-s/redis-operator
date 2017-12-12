@@ -73,12 +73,14 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
+	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	clientset "k8s.io/client-go/kubernetes"
-	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	"k8s.io/kubernetes/pkg/api/testapi"
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
+	appsinternal "k8s.io/kubernetes/pkg/apis/apps"
 	batchinternal "k8s.io/kubernetes/pkg/apis/batch"
+	api "k8s.io/kubernetes/pkg/apis/core"
 	extensionsinternal "k8s.io/kubernetes/pkg/apis/extensions"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	"k8s.io/kubernetes/pkg/client/conditions"
@@ -86,6 +88,7 @@ import (
 	gcecloud "k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 	"k8s.io/kubernetes/pkg/controller"
 	nodectlr "k8s.io/kubernetes/pkg/controller/node"
+	"k8s.io/kubernetes/pkg/features"
 	"k8s.io/kubernetes/pkg/kubectl"
 	"k8s.io/kubernetes/pkg/kubelet/util/format"
 	"k8s.io/kubernetes/pkg/master/ports"
@@ -154,14 +157,6 @@ const (
 	// When these values are updated, also update cmd/kubelet/app/options/options.go
 	currentPodInfraContainerImageName    = "gcr.io/google_containers/pause"
 	currentPodInfraContainerImageVersion = "3.0"
-
-	// How long each node is given during a process that restarts all nodes
-	// before the test is considered failed. (Note that the total time to
-	// restart all nodes will be this number times the number of nodes.)
-	RestartPerNodeTimeout = 5 * time.Minute
-
-	// How often to Poll the statues of a restart.
-	RestartPoll = 20 * time.Second
 
 	// How long a node is allowed to become "Ready" after it is restarted before
 	// the test is considered failed.
@@ -244,24 +239,8 @@ func GetPauseImageNameForHostArch() string {
 	return currentPodInfraContainerImageName + "-" + goruntime.GOARCH + ":" + currentPodInfraContainerImageVersion
 }
 
-// SubResource proxy should have been functional in v1.0.0, but SubResource
-// proxy via tunneling is known to be broken in v1.0.  See
-// https://github.com/kubernetes/kubernetes/pull/15224#issuecomment-146769463
-//
-// TODO(ihmccreery): remove once we don't care about v1.0 anymore, (tentatively
-// in v1.3).
-var SubResourcePodProxyVersion = utilversion.MustParseSemantic("v1.1.0")
-var SubResourceServiceAndNodeProxyVersion = utilversion.MustParseSemantic("v1.2.0")
-
 func GetServicesProxyRequest(c clientset.Interface, request *restclient.Request) (*restclient.Request, error) {
-	subResourceProxyAvailable, err := ServerVersionGTE(SubResourceServiceAndNodeProxyVersion, c.Discovery())
-	if err != nil {
-		return nil, err
-	}
-	if subResourceProxyAvailable {
-		return request.Resource("services").SubResource("proxy"), nil
-	}
-	return request.Prefix("proxy").Resource("services"), nil
+	return request.Resource("services").SubResource("proxy"), nil
 }
 
 // unique identifier of the e2e run
@@ -334,6 +313,12 @@ func SkipIfProviderIs(unsupportedProviders ...string) {
 	}
 }
 
+func SkipUnlessLocalEphemeralStorageEnabled() {
+	if !utilfeature.DefaultFeatureGate.Enabled(features.LocalStorageCapacityIsolation) {
+		Skipf("Only supported when %v feature is enabled", features.LocalStorageCapacityIsolation)
+	}
+}
+
 func SkipUnlessSSHKeyPresent() {
 	if _, err := GetSigner(TestContext.Provider); err != nil {
 		Skipf("No SSH Key for provider %s: '%v'", TestContext.Provider, err)
@@ -343,6 +328,12 @@ func SkipUnlessSSHKeyPresent() {
 func SkipUnlessProviderIs(supportedProviders ...string) {
 	if !ProviderIs(supportedProviders...) {
 		Skipf("Only supported for providers %v (not %s)", supportedProviders, TestContext.Provider)
+	}
+}
+
+func SkipUnlessClusterMonitoringModeIs(supportedMonitoring ...string) {
+	if !ClusterMonitoringModeIs(supportedMonitoring...) {
+		Skipf("Only next monitoring modes are supported %v (not %s)", supportedMonitoring, TestContext.ClusterMonitoringMode)
 	}
 }
 
@@ -387,6 +378,15 @@ func RunIfSystemSpecNameIs(names ...string) {
 func ProviderIs(providers ...string) bool {
 	for _, provider := range providers {
 		if strings.ToLower(provider) == strings.ToLower(TestContext.Provider) {
+			return true
+		}
+	}
+	return false
+}
+
+func ClusterMonitoringModeIs(monitoringModes ...string) bool {
+	for _, mode := range monitoringModes {
+		if strings.ToLower(mode) == strings.ToLower(TestContext.ClusterMonitoringMode) {
 			return true
 		}
 	}
@@ -593,6 +593,7 @@ func WaitForPodsRunningReady(c clientset.Interface, ns string, minPods, allowedN
 	var ignoreNotReady bool
 	badPods := []v1.Pod{}
 	desiredPods := 0
+	notReady := int32(0)
 
 	if wait.PollImmediate(Poll, timeout, func() (bool, error) {
 		// We get the new list of pods, replication controllers, and
@@ -614,7 +615,7 @@ func WaitForPodsRunningReady(c clientset.Interface, ns string, minPods, allowedN
 			replicaOk += rc.Status.ReadyReplicas
 		}
 
-		rsList, err := c.Extensions().ReplicaSets(ns).List(metav1.ListOptions{})
+		rsList, err := c.ExtensionsV1beta1().ReplicaSets(ns).List(metav1.ListOptions{})
 		if err != nil {
 			Logf("Error getting replication sets in namespace %q: %v", ns, err)
 			if IsRetryableAPIError(err) {
@@ -636,7 +637,7 @@ func WaitForPodsRunningReady(c clientset.Interface, ns string, minPods, allowedN
 			return false, err
 		}
 		nOk := int32(0)
-		notReady := int32(0)
+		notReady = int32(0)
 		badPods = []v1.Pod{}
 		desiredPods = len(podList.Items)
 		for _, pod := range podList.Items {
@@ -679,7 +680,7 @@ func WaitForPodsRunningReady(c clientset.Interface, ns string, minPods, allowedN
 		if !ignoreNotReady {
 			return errors.New(errorBadPodsStates(badPods, desiredPods, ns, "RUNNING and READY", timeout))
 		}
-		Logf("Number of not-ready pods is allowed.")
+		Logf("Number of not-ready pods (%d) is below the allowed threshold (%d).", notReady, allowedNotReadyPods)
 	}
 	return nil
 }
@@ -1165,12 +1166,14 @@ func hasRemainingContent(c clientset.Interface, clientPool dynamic.ClientPool, n
 	}
 
 	// find out what content is supported on the server
-	resources, err := c.Discovery().ServerPreferredNamespacedResources()
-	if err != nil && !isDynamicDiscoveryError(err) {
+	// Since extension apiserver is not always available, e.g. metrics server sometimes goes down,
+	// add retry here.
+	resources, err := waitForServerPreferredNamespacedResources(c.Discovery(), 30*time.Second)
+	if err != nil {
 		return false, err
 	}
 	groupVersionResources, err := discovery.GroupVersionResources(resources)
-	if err != nil && !isDynamicDiscoveryError(err) {
+	if err != nil {
 		return false, err
 	}
 
@@ -1672,34 +1675,19 @@ func (r podProxyResponseChecker) CheckAllResponses() (done bool, err error) {
 		if !isElementOf(pod.UID, currentPods) {
 			return false, fmt.Errorf("pod with UID %s is no longer a member of the replica set.  Must have been restarted for some reason.  Current replica set: %v", pod.UID, currentPods)
 		}
-		subResourceProxyAvailable, err := ServerVersionGTE(SubResourcePodProxyVersion, r.c.Discovery())
-		if err != nil {
-			return false, err
-		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), SingleCallTimeout)
 		defer cancel()
 
-		var body []byte
-		if subResourceProxyAvailable {
-			body, err = r.c.CoreV1().RESTClient().Get().
-				Context(ctx).
-				Namespace(r.ns).
-				Resource("pods").
-				SubResource("proxy").
-				Name(string(pod.Name)).
-				Do().
-				Raw()
-		} else {
-			body, err = r.c.CoreV1().RESTClient().Get().
-				Context(ctx).
-				Prefix("proxy").
-				Namespace(r.ns).
-				Resource("pods").
-				Name(string(pod.Name)).
-				Do().
-				Raw()
-		}
+		body, err := r.c.CoreV1().RESTClient().Get().
+			Context(ctx).
+			Namespace(r.ns).
+			Resource("pods").
+			SubResource("proxy").
+			Name(string(pod.Name)).
+			Do().
+			Raw()
+
 		if err != nil {
 			if ctx.Err() != nil {
 				// We may encounter errors here because of a race between the pod readiness and apiserver
@@ -2744,6 +2732,19 @@ func WaitForControlledPodsRunning(c clientset.Interface, ns, name string, kind s
 	return nil
 }
 
+// Wait up to PodListTimeout for getting pods of the specified controller name and return them.
+func WaitForControlledPods(c clientset.Interface, ns, name string, kind schema.GroupKind) (pods *v1.PodList, err error) {
+	rtObject, err := getRuntimeObjectForKind(c, kind, ns, name)
+	if err != nil {
+		return nil, err
+	}
+	selector, err := getSelectorFromRuntimeObject(rtObject)
+	if err != nil {
+		return nil, err
+	}
+	return WaitForPodsWithLabel(c, ns, selector)
+}
+
 // Returns true if all the specified pods are scheduled, else returns false.
 func podsWithLabelScheduled(c clientset.Interface, ns string, label labels.Selector) (bool, error) {
 	PodStore := testutil.NewPodStore(c, ns, label, fields.Everything())
@@ -2833,14 +2834,14 @@ func getRuntimeObjectForKind(c clientset.Interface, kind schema.GroupKind, ns, n
 	switch kind {
 	case api.Kind("ReplicationController"):
 		return c.CoreV1().ReplicationControllers(ns).Get(name, metav1.GetOptions{})
-	case extensionsinternal.Kind("ReplicaSet"):
-		return c.Extensions().ReplicaSets(ns).Get(name, metav1.GetOptions{})
-	case extensionsinternal.Kind("Deployment"):
-		return c.Extensions().Deployments(ns).Get(name, metav1.GetOptions{})
+	case extensionsinternal.Kind("ReplicaSet"), appsinternal.Kind("ReplicaSet"):
+		return c.ExtensionsV1beta1().ReplicaSets(ns).Get(name, metav1.GetOptions{})
+	case extensionsinternal.Kind("Deployment"), appsinternal.Kind("Deployment"):
+		return c.ExtensionsV1beta1().Deployments(ns).Get(name, metav1.GetOptions{})
 	case extensionsinternal.Kind("DaemonSet"):
-		return c.Extensions().DaemonSets(ns).Get(name, metav1.GetOptions{})
+		return c.ExtensionsV1beta1().DaemonSets(ns).Get(name, metav1.GetOptions{})
 	case batchinternal.Kind("Job"):
-		return c.Batch().Jobs(ns).Get(name, metav1.GetOptions{})
+		return c.BatchV1().Jobs(ns).Get(name, metav1.GetOptions{})
 	default:
 		return nil, fmt.Errorf("Unsupported kind when getting runtime object: %v", kind)
 	}
@@ -2850,14 +2851,14 @@ func deleteResource(c clientset.Interface, kind schema.GroupKind, ns, name strin
 	switch kind {
 	case api.Kind("ReplicationController"):
 		return c.CoreV1().ReplicationControllers(ns).Delete(name, deleteOption)
-	case extensionsinternal.Kind("ReplicaSet"):
-		return c.Extensions().ReplicaSets(ns).Delete(name, deleteOption)
-	case extensionsinternal.Kind("Deployment"):
-		return c.Extensions().Deployments(ns).Delete(name, deleteOption)
+	case extensionsinternal.Kind("ReplicaSet"), appsinternal.Kind("ReplicaSet"):
+		return c.ExtensionsV1beta1().ReplicaSets(ns).Delete(name, deleteOption)
+	case extensionsinternal.Kind("Deployment"), appsinternal.Kind("Deployment"):
+		return c.ExtensionsV1beta1().Deployments(ns).Delete(name, deleteOption)
 	case extensionsinternal.Kind("DaemonSet"):
-		return c.Extensions().DaemonSets(ns).Delete(name, deleteOption)
+		return c.ExtensionsV1beta1().DaemonSets(ns).Delete(name, deleteOption)
 	case batchinternal.Kind("Job"):
-		return c.Batch().Jobs(ns).Delete(name, deleteOption)
+		return c.BatchV1().Jobs(ns).Delete(name, deleteOption)
 	default:
 		return fmt.Errorf("Unsupported kind when deleting: %v", kind)
 	}
@@ -3826,19 +3827,39 @@ func RestartKubeProxy(host string) error {
 
 func RestartKubelet(host string) error {
 	// TODO: Make it work for all providers and distros.
-	if !ProviderIs("gce", "aws") {
-		return fmt.Errorf("unsupported provider: %s", TestContext.Provider)
+	supportedProviders := []string{"gce", "aws", "vsphere"}
+	if !ProviderIs(supportedProviders...) {
+		return fmt.Errorf("unsupported provider: %s, supported providers are: %v", TestContext.Provider, supportedProviders)
 	}
 	if ProviderIs("gce") && !NodeOSDistroIs("debian", "gci") {
 		return fmt.Errorf("unsupported node OS distro: %s", TestContext.NodeOSDistro)
 	}
 	var cmd string
+
 	if ProviderIs("gce") && NodeOSDistroIs("debian") {
 		cmd = "sudo /etc/init.d/kubelet restart"
+	} else if ProviderIs("vsphere") {
+		var sudoPresent bool
+		sshResult, err := SSH("sudo --version", host, TestContext.Provider)
+		if err != nil {
+			return fmt.Errorf("Unable to ssh to host %s with error %v", host, err)
+		}
+		if !strings.Contains(sshResult.Stderr, "command not found") {
+			sudoPresent = true
+		}
+		sshResult, err = SSH("systemctl --version", host, TestContext.Provider)
+		if !strings.Contains(sshResult.Stderr, "command not found") {
+			cmd = "systemctl restart kubelet"
+		} else {
+			cmd = "service kubelet restart"
+		}
+		if sudoPresent {
+			cmd = fmt.Sprintf("sudo %s", cmd)
+		}
 	} else {
 		cmd = "sudo systemctl restart kubelet"
 	}
-	Logf("Restarting kubelet via ssh, running: %v", cmd)
+	Logf("Restarting kubelet via ssh on host %s with command %s", host, cmd)
 	result, err := SSH(cmd, host, TestContext.Provider)
 	if err != nil || result.Code != 0 {
 		LogSSHResult(result)
@@ -4134,7 +4155,7 @@ func OpenWebSocketForURL(url *url.URL, config *restclient.Config, protocols []st
 
 // getIngressAddress returns the ips/hostnames associated with the Ingress.
 func getIngressAddress(client clientset.Interface, ns, name string) ([]string, error) {
-	ing, err := client.Extensions().Ingresses(ns).Get(name, metav1.GetOptions{})
+	ing, err := client.ExtensionsV1beta1().Ingresses(ns).Get(name, metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -4404,29 +4425,16 @@ const proxyTimeout = 2 * time.Minute
 func NodeProxyRequest(c clientset.Interface, node, endpoint string) (restclient.Result, error) {
 	// proxy tends to hang in some cases when Node is not ready. Add an artificial timeout for this call.
 	// This will leak a goroutine if proxy hangs. #22165
-	subResourceProxyAvailable, err := ServerVersionGTE(SubResourceServiceAndNodeProxyVersion, c.Discovery())
-	if err != nil {
-		return restclient.Result{}, err
-	}
 	var result restclient.Result
 	finished := make(chan struct{})
 	go func() {
-		if subResourceProxyAvailable {
-			result = c.CoreV1().RESTClient().Get().
-				Resource("nodes").
-				SubResource("proxy").
-				Name(fmt.Sprintf("%v:%v", node, ports.KubeletPort)).
-				Suffix(endpoint).
-				Do()
+		result = c.CoreV1().RESTClient().Get().
+			Resource("nodes").
+			SubResource("proxy").
+			Name(fmt.Sprintf("%v:%v", node, ports.KubeletPort)).
+			Suffix(endpoint).
+			Do()
 
-		} else {
-			result = c.CoreV1().RESTClient().Get().
-				Prefix("proxy").
-				Resource("nodes").
-				Name(fmt.Sprintf("%v:%v", node, ports.KubeletPort)).
-				Suffix(endpoint).
-				Do()
-		}
 		finished <- struct{}{}
 	}()
 	select {
@@ -4491,7 +4499,7 @@ func LaunchWebserverPod(f *Framework, podName, nodeName string) (ip string) {
 	ExpectNoError(f.WaitForPodRunning(podName))
 	createdPod, err := podClient.Get(podName, metav1.GetOptions{})
 	ExpectNoError(err)
-	ip = fmt.Sprintf("%s:%d", createdPod.Status.PodIP, port)
+	ip = net.JoinHostPort(createdPod.Status.PodIP, strconv.Itoa(port))
 	Logf("Target pod IP:port is %s", ip)
 	return
 }
@@ -4568,11 +4576,17 @@ func CoreDump(dir string) {
 		Logf("Dumping logs locally to: %s", dir)
 		cmd = exec.Command(path.Join(TestContext.RepoRoot, "cluster", "log-dump", "log-dump.sh"), dir)
 	}
+	cmd.Env = append(os.Environ(), fmt.Sprintf("LOG_DUMP_SYSTEMD_SERVICES=%s", parseSystemdServices(TestContext.SystemdServices)))
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		Logf("Error running cluster/log-dump/log-dump.sh: %v", err)
 	}
+}
+
+// parseSystemdServices converts services separator from comma to space.
+func parseSystemdServices(services string) string {
+	return strings.TrimSpace(strings.Replace(services, ",", " ", -1))
 }
 
 func UpdatePodWithRetries(client clientset.Interface, ns, name string, update func(*v1.Pod)) (*v1.Pod, error) {
@@ -5088,4 +5102,26 @@ func DsFromManifest(url string) (*extensions.DaemonSet, error) {
 		return nil, fmt.Errorf("failed to decode DaemonSet spec: %v", err)
 	}
 	return &controller, nil
+}
+
+// waitForServerPreferredNamespacedResources waits until server preferred namespaced resources could be successfully discovered.
+// TODO: Fix https://github.com/kubernetes/kubernetes/issues/55768 and remove the following retry.
+func waitForServerPreferredNamespacedResources(d discovery.DiscoveryInterface, timeout time.Duration) ([]*metav1.APIResourceList, error) {
+	Logf("Waiting up to %v for server preferred namespaced resources to be successfully discovered", timeout)
+	var resources []*metav1.APIResourceList
+	if err := wait.PollImmediate(Poll, timeout, func() (bool, error) {
+		var err error
+		resources, err = d.ServerPreferredNamespacedResources()
+		if err == nil || isDynamicDiscoveryError(err) {
+			return true, nil
+		}
+		if !discovery.IsGroupDiscoveryFailedError(err) {
+			return false, err
+		}
+		Logf("Error discoverying server preferred namespaced resources: %v, retrying in %v.", err, Poll)
+		return false, nil
+	}); err != nil {
+		return nil, err
+	}
+	return resources, nil
 }

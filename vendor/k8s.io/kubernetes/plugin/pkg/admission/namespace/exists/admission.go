@@ -23,7 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apiserver/pkg/admission"
-	"k8s.io/kubernetes/pkg/api"
+	api "k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	informers "k8s.io/kubernetes/pkg/client/informers/informers_generated/internalversion"
 	corelisters "k8s.io/kubernetes/pkg/client/listers/core/internalversion"
@@ -46,11 +46,12 @@ type Exists struct {
 	namespaceLister corelisters.NamespaceLister
 }
 
+var _ admission.ValidationInterface = &Exists{}
 var _ = kubeapiserveradmission.WantsInternalKubeInformerFactory(&Exists{})
 var _ = kubeapiserveradmission.WantsInternalKubeClientSet(&Exists{})
 
-// Admit makes an admission decision based on the request attributes
-func (e *Exists) Admit(a admission.Attributes) error {
+// Validate makes an admission decision based on the request attributes
+func (e *Exists) Validate(a admission.Attributes) error {
 	// if we're here, then we've already passed authentication, so we're allowed to do what we're trying to do
 	// if we're here, then the API server has found a route, which means that if we have a non-empty namespace
 	// its a namespaced resource.

@@ -430,6 +430,13 @@ run_pod_tests() {
   kubectl create -f test/fixtures/doc-yaml/admin/limitrange/valid-pod.yaml "${kube_flags[@]}"
   # Post-condition: valid-pod POD is created
   kube::test::get_object_assert pods "{{range.items}}{{$id_field}}:{{end}}" 'valid-pod:'
+  # Command
+  output_message=$(kubectl get pods --field-selector metadata.name=valid-pod "${kube_flags[@]}")
+  kube::test::if_has_string "${output_message}" "valid-pod"
+  # Command
+  phase=$(kubectl get "${kube_flags[@]}" pod valid-pod -o go-template='{{ .status.phase }}')
+  output_message=$(kubectl get pods --field-selector status.phase="${phase}" "${kube_flags[@]}")
+  kube::test::if_has_string "${output_message}" "valid-pod"
 
   ### Delete PODs with no parameter mustn't kill everything
   # Pre-condition: valid-pod POD exists
@@ -1390,7 +1397,7 @@ run_kubectl_get_tests() {
   kube::test::if_has_string "${output_message}" "/api/v1/namespaces/default/pods 200 OK"
   kube::test::if_has_string "${output_message}" "/api/v1/namespaces/default/replicationcontrollers 200 OK"
   kube::test::if_has_string "${output_message}" "/api/v1/namespaces/default/services 200 OK"
-  kube::test::if_has_string "${output_message}" "/apis/apps/v1beta1/namespaces/default/statefulsets 200 OK"
+  kube::test::if_has_string "${output_message}" "/apis/apps/v1/namespaces/default/statefulsets 200 OK"
   kube::test::if_has_string "${output_message}" "/apis/autoscaling/v1/namespaces/default/horizontalpodautoscalers 200"
   kube::test::if_has_string "${output_message}" "/apis/batch/v1/namespaces/default/jobs 200 OK"
   kube::test::if_has_string "${output_message}" "/apis/extensions/v1beta1/namespaces/default/deployments 200 OK"
@@ -2749,7 +2756,7 @@ run_deployment_tests() {
   output_message=$(kubectl get deployment.extensions -o=jsonpath='{.items[0].apiVersion}' 2>&1 "${kube_flags[@]}")
   kube::test::if_has_string "${output_message}" 'extensions/v1beta1'
   output_message=$(kubectl get deployment.apps -o=jsonpath='{.items[0].apiVersion}' 2>&1 "${kube_flags[@]}")
-  kube::test::if_has_string "${output_message}" 'apps/v1beta1'
+  kube::test::if_has_string "${output_message}" 'apps/v1'
   # Clean up
   kubectl delete deployment test-nginx-extensions "${kube_flags[@]}"
 
@@ -2764,7 +2771,7 @@ run_deployment_tests() {
   output_message=$(kubectl get deployment.extensions -o=jsonpath='{.items[0].apiVersion}' 2>&1 "${kube_flags[@]}")
   kube::test::if_has_string "${output_message}" 'extensions/v1beta1'
   output_message=$(kubectl get deployment.apps -o=jsonpath='{.items[0].apiVersion}' 2>&1 "${kube_flags[@]}")
-  kube::test::if_has_string "${output_message}" 'apps/v1beta1'
+  kube::test::if_has_string "${output_message}" 'apps/v1'
   # Describe command (resource only) should print detailed information
   kube::test::describe_resource_assert rs "Name:" "Pod Template:" "Labels:" "Selector:" "Controlled By" "Replicas:" "Pods Status:" "Volumes:"
   # Describe command (resource only) should print detailed information

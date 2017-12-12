@@ -39,6 +39,7 @@ var _ = instrumentation.SIGDescribe("Monitoring", func() {
 
 	BeforeEach(func() {
 		framework.SkipUnlessProviderIs("gce")
+		framework.SkipUnlessClusterMonitoringModeIs("influxdb")
 	})
 
 	It("should verify monitoring pods and all cluster nodes are available on influxdb using heapster.", func() {
@@ -66,42 +67,21 @@ var (
 
 // Query sends a command to the server and returns the Response
 func Query(c clientset.Interface, query string) (*influxdb.Response, error) {
-	subResourceProxyAvailable, err := framework.ServerVersionGTE(framework.SubResourceServiceAndNodeProxyVersion, c.Discovery())
-	if err != nil {
-		return nil, err
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), framework.SingleCallTimeout)
 	defer cancel()
 
-	var result []byte
-	if subResourceProxyAvailable {
-		result, err = c.CoreV1().RESTClient().Get().
-			Context(ctx).
-			Namespace("kube-system").
-			Resource("services").
-			Name(influxdbService+":api").
-			SubResource("proxy").
-			Suffix("query").
-			Param("q", query).
-			Param("db", influxdbDatabaseName).
-			Param("epoch", "s").
-			Do().
-			Raw()
-	} else {
-		result, err = c.CoreV1().RESTClient().Get().
-			Context(ctx).
-			Prefix("proxy").
-			Namespace("kube-system").
-			Resource("services").
-			Name(influxdbService+":api").
-			Suffix("query").
-			Param("q", query).
-			Param("db", influxdbDatabaseName).
-			Param("epoch", "s").
-			Do().
-			Raw()
-	}
+	result, err := c.CoreV1().RESTClient().Get().
+		Context(ctx).
+		Namespace("kube-system").
+		Resource("services").
+		Name(influxdbService+":api").
+		SubResource("proxy").
+		Suffix("query").
+		Param("q", query).
+		Param("db", influxdbDatabaseName).
+		Param("epoch", "s").
+		Do().
+		Raw()
 
 	if err != nil {
 		if ctx.Err() != nil {
@@ -134,7 +114,7 @@ func verifyExpectedRcsExistAndGetExpectedPods(c clientset.Interface) ([]string, 
 	for _, rcLabel := range rcLabels {
 		selector := labels.Set{"k8s-app": rcLabel}.AsSelector()
 		options := metav1.ListOptions{LabelSelector: selector.String()}
-		deploymentList, err := c.Extensions().Deployments(metav1.NamespaceSystem).List(options)
+		deploymentList, err := c.ExtensionsV1beta1().Deployments(metav1.NamespaceSystem).List(options)
 		if err != nil {
 			return nil, err
 		}

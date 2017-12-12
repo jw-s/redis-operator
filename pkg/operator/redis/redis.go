@@ -5,8 +5,8 @@ import (
 	"github.com/go-redis/redis"
 	"github.com/jw-s/redis-operator/pkg/apis/redis/v1"
 	redisclient "github.com/jw-s/redis-operator/pkg/generated/clientset/typed/redis/v1"
-	"github.com/jw-s/redis-operator/pkg/operator/spec"
 	"github.com/sirupsen/logrus"
+	"github.com/jw-s/redis-operator/pkg/operator/spec"
 )
 
 type Config struct {
@@ -30,7 +30,7 @@ func New(config Config, redis *v1.Redis) *Redis {
 
 	redis.Spec.ApplyDefaults()
 
-	redis.Spec.Sentinels.ApplyDefaults(v1.ConfigMap(spec.GetSentinelConfigMapName(redis.Name)))
+	redis.Spec.Sentinels.ApplyDefaults(spec.GetSentinelConfigMapName(redis.Name))
 
 	newRedis.Redis = redis
 

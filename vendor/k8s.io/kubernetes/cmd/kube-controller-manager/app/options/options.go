@@ -39,6 +39,16 @@ import (
 	"github.com/spf13/pflag"
 )
 
+const (
+	// These defaults are deprecated and exported so that we can warn if
+	// they are being used.
+
+	// DefaultClusterSigningCertFile is deprecated. Do not use.
+	DefaultClusterSigningCertFile = "/etc/kubernetes/ca/ca.pem"
+	// DefaultClusterSigningKeyFile is deprecated. Do not use.
+	DefaultClusterSigningKeyFile = "/etc/kubernetes/ca/ca.key"
+)
+
 // CMServer is the main context object for the controller manager.
 type CMServer struct {
 	componentconfig.KubeControllerManagerConfiguration
@@ -111,8 +121,8 @@ func NewCMServer() *CMServer {
 			EnableGarbageCollector:                true,
 			ConcurrentGCSyncs:                     20,
 			GCIgnoredResources:                    gcIgnoredResources,
-			ClusterSigningCertFile:                "/etc/kubernetes/ca/ca.pem",
-			ClusterSigningKeyFile:                 "/etc/kubernetes/ca/ca.key",
+			ClusterSigningCertFile:                DefaultClusterSigningCertFile,
+			ClusterSigningKeyFile:                 DefaultClusterSigningKeyFile,
 			ClusterSigningDuration:                metav1.Duration{Duration: helpers.OneYear},
 			ReconcilerSyncLoopPeriod:              metav1.Duration{Duration: 60 * time.Second},
 			EnableTaintManager:                    true,
@@ -195,8 +205,8 @@ func (s *CMServer) AddFlags(fs *pflag.FlagSet, allControllers []string, disabled
 	fs.BoolVar(&s.EnableProfiling, "profiling", true, "Enable profiling via web interface host:port/debug/pprof/")
 	fs.BoolVar(&s.EnableContentionProfiling, "contention-profiling", false, "Enable lock contention profiling, if profiling is enabled")
 	fs.StringVar(&s.ClusterName, "cluster-name", s.ClusterName, "The instance prefix for the cluster")
-	fs.StringVar(&s.ClusterCIDR, "cluster-cidr", s.ClusterCIDR, "CIDR Range for Pods in cluster.")
-	fs.StringVar(&s.ServiceCIDR, "service-cluster-ip-range", s.ServiceCIDR, "CIDR Range for Services in cluster.")
+	fs.StringVar(&s.ClusterCIDR, "cluster-cidr", s.ClusterCIDR, "CIDR Range for Pods in cluster. Requires --allocate-node-cidrs to be true")
+	fs.StringVar(&s.ServiceCIDR, "service-cluster-ip-range", s.ServiceCIDR, "CIDR Range for Services in cluster. Requires --allocate-node-cidrs to be true")
 	fs.Int32Var(&s.NodeCIDRMaskSize, "node-cidr-mask-size", s.NodeCIDRMaskSize, "Mask size for node cidr in cluster.")
 	fs.BoolVar(&s.AllocateNodeCIDRs, "allocate-node-cidrs", false,
 		"Should CIDRs for Pods be allocated and set on the cloud provider.")

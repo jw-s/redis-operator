@@ -22,12 +22,13 @@ import (
 	"time"
 
 	"k8s.io/apiserver/pkg/admission"
-	"k8s.io/kubernetes/pkg/api"
+	api "k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	informers "k8s.io/kubernetes/pkg/client/informers/informers_generated/internalversion"
 	kubeapiserveradmission "k8s.io/kubernetes/pkg/kubeapiserver/admission"
 	"k8s.io/kubernetes/pkg/quota"
 	resourcequotaapi "k8s.io/kubernetes/plugin/pkg/admission/resourcequota/apis/resourcequota"
+	resourcequotaapiv1alpha1 "k8s.io/kubernetes/plugin/pkg/admission/resourcequota/apis/resourcequota/v1alpha1"
 	"k8s.io/kubernetes/plugin/pkg/admission/resourcequota/apis/resourcequota/validation"
 )
 
@@ -48,6 +49,10 @@ func Register(plugins *admission.Plugins) {
 			}
 			return NewResourceQuota(configuration, 5, make(chan struct{}))
 		})
+
+	// add our config types
+	resourcequotaapi.AddToScheme(plugins.ConfigScheme)
+	resourcequotaapiv1alpha1.AddToScheme(plugins.ConfigScheme)
 }
 
 // QuotaAdmission implements an admission controller that can enforce quota constraints
@@ -61,6 +66,7 @@ type QuotaAdmission struct {
 	evaluator          Evaluator
 }
 
+var _ admission.ValidationInterface = &QuotaAdmission{}
 var _ = kubeapiserveradmission.WantsInternalKubeClientSet(&QuotaAdmission{})
 var _ = kubeapiserveradmission.WantsQuotaConfiguration(&QuotaAdmission{})
 
@@ -120,8 +126,8 @@ func (a *QuotaAdmission) ValidateInitialization() error {
 	return nil
 }
 
-// Admit makes admission decisions while enforcing quota
-func (a *QuotaAdmission) Admit(attr admission.Attributes) (err error) {
+// Validate makes admission decisions while enforcing quota
+func (a *QuotaAdmission) Validate(attr admission.Attributes) (err error) {
 	// ignore all operations that correspond to sub-resource actions
 	if attr.GetSubresource() != "" {
 		return nil

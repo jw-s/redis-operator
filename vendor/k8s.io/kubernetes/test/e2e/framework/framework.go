@@ -71,6 +71,7 @@ type Framework struct {
 	Namespace                *v1.Namespace   // Every test has at least one namespace unless creation is skipped
 	namespacesToDelete       []*v1.Namespace // Some tests have more than one.
 	NamespaceDeletionTimeout time.Duration
+	SkipPrivilegedPSPBinding bool // Whether to skip creating a binding to the privileged PSP in the test namespace
 
 	gatherer *containerResourceGatherer
 	// Constraints that passed to a check which is executed after data is gathered to
@@ -202,13 +203,16 @@ func (f *Framework) BeforeEach() {
 	if TestContext.GatherKubeSystemResourceUsageData != "false" && TestContext.GatherKubeSystemResourceUsageData != "none" {
 		var err error
 		f.gatherer, err = NewResourceUsageGatherer(f.ClientSet, ResourceGathererOptions{
-			inKubemark: ProviderIs("kubemark"),
-			masterOnly: TestContext.GatherKubeSystemResourceUsageData == "master",
-		})
+			InKubemark:                  ProviderIs("kubemark"),
+			MasterOnly:                  TestContext.GatherKubeSystemResourceUsageData == "master",
+			ResourceDataGatheringPeriod: 60 * time.Second,
+			ProbeDuration:               15 * time.Second,
+			PrintVerboseLogs:            false,
+		}, nil)
 		if err != nil {
 			Logf("Error while creating NewResourceUsageGatherer: %v", err)
 		} else {
-			go f.gatherer.startGatheringData()
+			go f.gatherer.StartGatheringData()
 		}
 	}
 
@@ -318,7 +322,7 @@ func (f *Framework) AfterEach() {
 
 	if TestContext.GatherKubeSystemResourceUsageData != "false" && TestContext.GatherKubeSystemResourceUsageData != "none" && f.gatherer != nil {
 		By("Collecting resource usage data")
-		summary, resourceViolationError := f.gatherer.stopAndSummarize([]int{90, 99, 100}, f.AddonResourceConstraints)
+		summary, resourceViolationError := f.gatherer.StopAndSummarize([]int{90, 99, 100}, f.AddonResourceConstraints)
 		defer ExpectNoError(resourceViolationError)
 		f.TestSummaries = append(f.TestSummaries, summary)
 	}
@@ -373,6 +377,11 @@ func (f *Framework) CreateNamespace(baseName string, labels map[string]string) (
 	if ns != nil {
 		f.namespacesToDelete = append(f.namespacesToDelete, ns)
 	}
+
+	if !f.SkipPrivilegedPSPBinding {
+		CreatePrivilegedPSPBinding(f, ns.Name)
+	}
+
 	return ns, err
 }
 

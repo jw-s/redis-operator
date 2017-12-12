@@ -17,7 +17,7 @@ limitations under the License.
 package scheme
 
 import (
-	admissionv1alpha1 "k8s.io/api/admission/v1alpha1"
+	admissionv1alpha1 "k8s.io/api/admission/v1beta1"
 	admissionregistrationv1alpha1 "k8s.io/api/admissionregistration/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	appsv1beta1 "k8s.io/api/apps/v1beta1"
@@ -81,9 +81,6 @@ func init() {
 				"PodProxyOptions",
 				"NodeProxyOptions",
 				"ServiceProxyOptions",
-				"ThirdPartyResource",
-				"ThirdPartyResourceData",
-				"ThirdPartyResourceList",
 			),
 		},
 		announced.VersionToSchemeFunc{
@@ -109,7 +106,7 @@ func init() {
 	if err := announced.NewGroupMetaFactory(
 		&announced.GroupMetaFactoryArgs{
 			GroupName:              admissionregistrationv1alpha1.GroupName,
-			RootScopedKinds:        sets.NewString("InitializerConfiguration", "ExternalAdmissionHookConfiguration"),
+			RootScopedKinds:        sets.NewString("InitializerConfiguration", "ValidatingWebhookConfiguration", "MutatingWebhookConfiguration"),
 			VersionPreferenceOrder: []string{admissionregistrationv1alpha1.SchemeGroupVersion.Version},
 		},
 		announced.VersionToSchemeFunc{
@@ -205,7 +202,7 @@ func init() {
 		&announced.GroupMetaFactoryArgs{
 			GroupName:              extensionsv1beta1.GroupName,
 			VersionPreferenceOrder: []string{extensionsv1beta1.SchemeGroupVersion.Version},
-			RootScopedKinds:        sets.NewString("PodSecurityPolicy", "ThirdPartyResource"),
+			RootScopedKinds:        sets.NewString("PodSecurityPolicy"),
 		},
 		announced.VersionToSchemeFunc{
 			extensionsv1beta1.SchemeGroupVersion.Version: extensionsv1beta1.AddToScheme,
