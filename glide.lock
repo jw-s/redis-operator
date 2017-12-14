@@ -1,5 +1,5 @@
 hash: 88ac18845b43d91d4ed53b9f24c729b9910be9a2af42653b3978bef88ea5dc4d
-updated: 2017-12-12T12:42:38.187693956+01:00
+updated: 2017-12-14T11:43:52.311669935+01:00
 imports:
 - name: github.com/davecgh/go-spew
   version: 782f4967f2dc4564575ca782fe2d04090b5faca8
@@ -296,7 +296,7 @@ imports:
   subpackages:
   - pkg/common
 - name: k8s.io/kubernetes
-  version: b97e17603b76edf7344f49a7632b1f764d5386e6
+  version: 2a70dc8746a4f3f4e3cddcd64cff79fde8aeae85
   subpackages:
   - plugin/pkg/scheduler/api
 testImports: []
