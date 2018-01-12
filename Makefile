@@ -8,7 +8,7 @@ build: bin/redis
 	docker build -t $(REDIS_OPERATOR_IMAGE_NAME):$(VERSION) -f ./Dockerfile_prod .
 	docker tag $(REDIS_OPERATOR_IMAGE_NAME):$(VERSION) $(REDIS_OPERATOR_IMAGE_NAME):latest
 
-bin/redis: install-deps
+bin/redis: 
 	GOOS=linux GOARCH=amd64 go build -o bin/redis-operator ./cmd/operator
 
 install-deps:

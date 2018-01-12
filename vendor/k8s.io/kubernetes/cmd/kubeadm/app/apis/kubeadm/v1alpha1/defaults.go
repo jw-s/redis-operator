@@ -65,7 +65,7 @@ const (
 	DefaultProxyBindAddressv4 = "0.0.0.0"
 	// DefaultProxyBindAddressv6 is the default bind address when the advertise address is v6
 	DefaultProxyBindAddressv6 = "::"
-	// KubeproxyKubeConfigFileName efines the file name for the kube-proxy's KubeConfig file
+	// KubeproxyKubeConfigFileName defines the file name for the kube-proxy's KubeConfig file
 	KubeproxyKubeConfigFileName = "/var/lib/kube-proxy/kubeconfig.conf"
 )
 
@@ -184,9 +184,6 @@ func SetDefaults_KubeletConfiguration(obj *MasterConfiguration) {
 	}
 	if obj.KubeletConfiguration.BaseConfig.PodManifestPath == "" {
 		obj.KubeletConfiguration.BaseConfig.PodManifestPath = DefaultManifestsDir
-	}
-	if obj.KubeletConfiguration.BaseConfig.AllowPrivileged == nil {
-		obj.KubeletConfiguration.BaseConfig.AllowPrivileged = utilpointer.BoolPtr(true)
 	}
 	if obj.KubeletConfiguration.BaseConfig.ClusterDNS == nil {
 		dnsIP, err := constants.GetDNSIP(obj.Networking.ServiceSubnet)

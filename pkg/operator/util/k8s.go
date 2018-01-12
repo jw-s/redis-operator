@@ -1,9 +1,13 @@
 package util
 
 import (
+	rediserrors "github.com/jw-s/redis-operator/pkg/errors"
+	appsv1beta1 "k8s.io/api/apps/v1beta1"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"net"
 	"os"
@@ -69,4 +73,32 @@ func ResourceAlreadyExistError(err error) bool {
 
 func ResourceNotFoundError(err error) bool {
 	return errors.IsNotFound(err)
+}
+
+func CreateKubeResource(kubeClient kubernetes.Interface, namespace string, obj runtime.Object) (err error) {
+	switch t := obj.(type) {
+
+	case *apiv1.Pod:
+		_, err = kubeClient.CoreV1().Pods(namespace).Create(t)
+
+	case *appsv1beta1.Deployment:
+		_, err = kubeClient.AppsV1beta1().Deployments(namespace).Create(t)
+
+	case *appsv1beta1.StatefulSet:
+		_, err = kubeClient.AppsV1beta1().StatefulSets(namespace).Create(t)
+
+	case *apiv1.Endpoints:
+		_, err = kubeClient.CoreV1().Endpoints(namespace).Create(t)
+
+	case *apiv1.Service:
+		_, err = kubeClient.CoreV1().Services(namespace).Create(t)
+
+	case *apiv1.ConfigMap:
+		_, err = kubeClient.CoreV1().ConfigMaps(namespace).Create(t)
+
+	default:
+		err = rediserrors.UnsupportedKubeResource
+	}
+
+	return
 }

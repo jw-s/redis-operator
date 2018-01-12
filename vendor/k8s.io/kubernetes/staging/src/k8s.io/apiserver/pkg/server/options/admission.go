@@ -22,6 +22,7 @@ import (
 
 	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apiserver/pkg/admission"
 	"k8s.io/apiserver/pkg/admission/initializer"
 	admissionmetrics "k8s.io/apiserver/pkg/admission/metrics"
@@ -100,6 +101,20 @@ func (a *AdmissionOptions) ApplyTo(
 	scheme *runtime.Scheme,
 	pluginInitializers ...admission.PluginInitializer,
 ) error {
+	if a == nil {
+		return nil
+	}
+
+	// Admission need scheme to construct admission initializer.
+	if scheme == nil {
+		return fmt.Errorf("admission depends on a scheme, it cannot be nil")
+	}
+
+	// Admission depends on CoreAPI to set SharedInformerFactory and ClientConfig.
+	if informers == nil {
+		return fmt.Errorf("admission depends on a Kubernetes core API shared informer, it cannot be nil")
+	}
+
 	pluginNames := a.PluginNames
 	if len(a.PluginNames) == 0 {
 		pluginNames = a.enabledPluginNames()
@@ -129,7 +144,19 @@ func (a *AdmissionOptions) ApplyTo(
 }
 
 func (a *AdmissionOptions) Validate() []error {
+	if a == nil {
+		return nil
+	}
+
 	errs := []error{}
+
+	registeredPlugins := sets.NewString(a.Plugins.Registered()...)
+	for _, name := range a.PluginNames {
+		if !registeredPlugins.Has(name) {
+			errs = append(errs, fmt.Errorf("admission-control plugin %q is invalid", name))
+		}
+	}
+
 	return errs
 }
 

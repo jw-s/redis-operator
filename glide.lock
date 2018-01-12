@@ -1,5 +1,5 @@
 hash: 88ac18845b43d91d4ed53b9f24c729b9910be9a2af42653b3978bef88ea5dc4d
-updated: 2017-12-14T11:43:52.311669935+01:00
+updated: 2018-01-12T14:55:33.339287474+01:00
 imports:
 - name: github.com/davecgh/go-spew
   version: 782f4967f2dc4564575ca782fe2d04090b5faca8
@@ -22,7 +22,7 @@ imports:
 - name: github.com/go-openapi/swag
   version: 1d0bd113de87027671077d3c71eb3ac5d7dbba72
 - name: github.com/go-redis/redis
-  version: e5e021257bfc6d5fbf0beac33e30194311fb189f
+  version: 9c885d5ba8a22f260badcffde1649915fbeebfc0
   subpackages:
   - internal
   - internal/consistenthash
@@ -83,7 +83,7 @@ imports:
 - name: github.com/spf13/pflag
   version: 9ff6c6923cfffbcd502984b8e0c80539a94968b7
 - name: golang.org/x/crypto
-  version: 94eea52f7b742c7cbe0b03b22f0c4c8631ece122
+  version: 5f55bce93ad2c89f411e009659bb1fd83da36e7b
   subpackages:
   - ssh/terminal
 - name: golang.org/x/net
@@ -119,7 +119,7 @@ imports:
 - name: gopkg.in/yaml.v2
   version: 53feefa2559fb8dfa8d81baad31be332c97d6c77
 - name: k8s.io/api
-  version: 9b9dca205a15b6ce9ef10091f05d60a13fdcf418
+  version: 389dfa299845bcf399c16af89987e8775718ea48
   subpackages:
   - admissionregistration/v1alpha1
   - apps/v1beta1
@@ -146,7 +146,7 @@ imports:
   - storage/v1
   - storage/v1beta1
 - name: k8s.io/apimachinery
-  version: 5134afd2c0c91158afac0d8a28bd2177185a3bcc
+  version: bc110fd540ab678abbf2bc71d9ce908eb9325ef6
   subpackages:
   - pkg/api/equality
   - pkg/api/errors
@@ -192,7 +192,7 @@ imports:
   - third_party/forked/golang/json
   - third_party/forked/golang/reflect
 - name: k8s.io/client-go
-  version: 1b75876d45719a84085528ee621939b0c68a4b85
+  version: 3a46b5de730a74e064197a157c96c2d29724a677
   subpackages:
   - discovery
   - discovery/fake
@@ -296,7 +296,7 @@ imports:
   subpackages:
   - pkg/common
 - name: k8s.io/kubernetes
-  version: 2a70dc8746a4f3f4e3cddcd64cff79fde8aeae85
+  version: 744a6f0cde9eb2c3420a6151d6fd911f1f41b330
   subpackages:
-  - plugin/pkg/scheduler/api
+  - pkg/scheduler/api
 testImports: []

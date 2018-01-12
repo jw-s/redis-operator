@@ -19,6 +19,11 @@ var (
 	Resync time.Duration = time.Minute
 )
 
+func init() {
+	logrus.SetFormatter(&logrus.JSONFormatter{})
+	logrus.SetOutput(os.Stdout)
+}
+
 func main() {
 
 	doneChan := make(chan struct{})

@@ -5,6 +5,7 @@ import (
 	"reflect"
 
 	redisv1 "github.com/jw-s/redis-operator/pkg/apis/redis/v1"
+	"github.com/jw-s/redis-operator/pkg/errors"
 	"github.com/jw-s/redis-operator/pkg/operator/redis"
 	"github.com/jw-s/redis-operator/pkg/operator/spec"
 	"github.com/jw-s/redis-operator/pkg/operator/util"
@@ -14,7 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
-	"k8s.io/kubernetes/plugin/pkg/scheduler/api"
+	"k8s.io/kubernetes/pkg/scheduler/api"
 )
 
 func (c *RedisController) reconcile(redis *redis.Redis) error {
@@ -116,7 +117,7 @@ func (c *RedisController) sentinelProcess(redis *redisv1.Redis) error {
 	if err != nil {
 		if util.ResourceNotFoundError(err) {
 
-			return c.createDesiredDeployment(redis, spec.SentinelDeployment)
+			return util.CreateKubeResource(c.kubernetesClient, redis.Namespace, spec.SentinelDeployment(redis))
 		}
 
 		return err
@@ -128,7 +129,7 @@ func (c *RedisController) sentinelProcess(redis *redisv1.Redis) error {
 		return err
 	}
 
-	return c.updateDeploymentToDesired(redis, obj.(*appsv1beta1.Deployment), spec.SentinelDeployment)
+	return c.updateToDesired(redis.Namespace, obj.(*appsv1beta1.Deployment), spec.SentinelDeployment(redis))
 
 }
 
@@ -141,7 +142,7 @@ func (c *RedisController) sentinelConfigProcess(redis *redisv1.Redis) error {
 	if err != nil {
 		if util.ResourceNotFoundError(err) {
 
-			return c.createDesiredConfigMap(redis, spec.DefaultSentinelConfig)
+			return util.CreateKubeResource(c.kubernetesClient, redis.Namespace, spec.DefaultSentinelConfig(redis))
 		}
 
 		return err
@@ -157,7 +158,7 @@ func (c *RedisController) slaveProcess(redis *redisv1.Redis) error {
 	if err != nil {
 		if util.ResourceNotFoundError(err) {
 
-			return c.createDesiredStatefulSet(redis, spec.SlaveStatefulSet)
+			return util.CreateKubeResource(c.kubernetesClient, redis.Namespace, spec.SlaveStatefulSet(redis))
 		}
 
 		return err
@@ -169,7 +170,7 @@ func (c *RedisController) slaveProcess(redis *redisv1.Redis) error {
 		return err
 	}
 
-	return c.updateStateFulSetToDesired(redis, obj.(*appsv1beta1.StatefulSet), spec.SlaveStatefulSet)
+	return c.updateToDesired(redis.Namespace, obj.(*appsv1beta1.StatefulSet), spec.SlaveStatefulSet(redis))
 
 }
 
@@ -180,7 +181,7 @@ func (c *RedisController) sentinelServiceProcess(redis *redisv1.Redis) error {
 	if err != nil {
 		if util.ResourceNotFoundError(err) {
 
-			return c.createDesiredService(redis, spec.SentinelService)
+			return util.CreateKubeResource(c.kubernetesClient, redis.Namespace, spec.SentinelService(redis))
 
 		}
 
@@ -193,7 +194,7 @@ func (c *RedisController) sentinelServiceProcess(redis *redisv1.Redis) error {
 		return err
 	}
 
-	return c.updateServiceToDesired(redis, obj.(*apiv1.Service), spec.SentinelService)
+	return c.updateToDesired(redis.Namespace, obj.(*apiv1.Service), spec.SentinelService(redis))
 
 }
 
@@ -204,7 +205,7 @@ func (c *RedisController) masterServiceProcess(redis *redisv1.Redis) error {
 	if err != nil {
 		if util.ResourceNotFoundError(err) {
 
-			return c.createDesiredService(redis, spec.MasterService)
+			return util.CreateKubeResource(c.kubernetesClient, redis.Namespace, spec.MasterService(redis))
 		}
 
 		return err
@@ -216,7 +217,7 @@ func (c *RedisController) masterServiceProcess(redis *redisv1.Redis) error {
 		return err
 	}
 
-	return c.updateServiceToDesired(redis, obj.(*apiv1.Service), spec.MasterService)
+	return c.updateToDesired(redis.Namespace, obj.(*apiv1.Service), spec.MasterService(redis))
 }
 
 func (c *RedisController) masterEndpointProcess(redis *redisv1.Redis, ipAddress string) error {
@@ -226,7 +227,7 @@ func (c *RedisController) masterEndpointProcess(redis *redisv1.Redis, ipAddress 
 	if err != nil {
 		if util.ResourceNotFoundError(err) {
 
-			return c.createDesiredEndpoint(redis, ipAddress, spec.MasterServiceEndpoint)
+			return util.CreateKubeResource(c.kubernetesClient, redis.Namespace, spec.MasterServiceEndpoint(redis, ipAddress))
 		}
 
 		return err
@@ -238,160 +239,8 @@ func (c *RedisController) masterEndpointProcess(redis *redisv1.Redis, ipAddress 
 		return err
 	}
 
-	return c.updateEndpointToDesired(redis, obj.(*apiv1.Endpoints), ipAddress, spec.MasterServiceEndpoint)
+	return c.updateToDesired(redis.Namespace, obj.(*apiv1.Endpoints), spec.MasterServiceEndpoint(redis, ipAddress))
 
-}
-
-func (c *RedisController) createDesiredDeployment(redis *redisv1.Redis, desiredFunction func(*redisv1.Redis) *appsv1beta1.Deployment) (err error) {
-
-	_, err = c.kubernetesClient.AppsV1beta1().Deployments(redis.Namespace).Create(desiredFunction(redis))
-
-	return
-
-}
-
-func (c *RedisController) createDesiredStatefulSet(redis *redisv1.Redis, desiredFunction func(*redisv1.Redis) *appsv1beta1.StatefulSet) (err error) {
-
-	_, err = c.kubernetesClient.AppsV1beta1().StatefulSets(redis.Namespace).Create(desiredFunction(redis))
-
-	return
-
-}
-
-func (c *RedisController) createDesiredConfigMap(redis *redisv1.Redis, desiredFunction func(*redisv1.Redis) *apiv1.ConfigMap) (err error) {
-
-	_, err = c.kubernetesClient.CoreV1().ConfigMaps(redis.Namespace).Create(desiredFunction(redis))
-
-	return
-}
-
-func (c *RedisController) createDesiredService(redis *redisv1.Redis, desiredFunction func(*redisv1.Redis) *apiv1.Service) (err error) {
-
-	_, err = c.kubernetesClient.CoreV1().Services(redis.Namespace).Create(desiredFunction(redis))
-
-	return
-
-}
-
-func (c *RedisController) createDesiredEndpoint(redis *redisv1.Redis, ipAddress string, desiredFunction func(*redisv1.Redis, string) *apiv1.Endpoints) (err error) {
-
-	_, err = c.kubernetesClient.CoreV1().Endpoints(redis.Namespace).Create(desiredFunction(redis, ipAddress))
-
-	return
-
-}
-
-func (c *RedisController) updateDeploymentToDesired(redis *redisv1.Redis, actual *appsv1beta1.Deployment, desiredFunction func(*redisv1.Redis) *appsv1beta1.Deployment) error {
-
-	desired := desiredFunction(redis)
-
-	if !reflect.DeepEqual(actual, desired) {
-
-		actualJSON, err := json.Marshal(actual)
-		if err != nil {
-			return err
-		}
-		desiredJSON, err := json.Marshal(desired)
-		if err != nil {
-			return err
-		}
-
-		patch, err := strategicpatch.CreateTwoWayMergePatch(actualJSON, desiredJSON, appsv1beta1.Deployment{})
-
-		if err != nil {
-			return err
-		}
-
-		_, err = c.kubernetesClient.AppsV1beta1().Deployments(redis.Namespace).Patch(actual.Name, types.StrategicMergePatchType, patch)
-
-		return err
-	}
-
-	return nil
-}
-
-func (c *RedisController) updateStateFulSetToDesired(redis *redisv1.Redis, actual *appsv1beta1.StatefulSet, desiredFunction func(*redisv1.Redis) *appsv1beta1.StatefulSet) error {
-
-	desired := desiredFunction(redis)
-
-	if !reflect.DeepEqual(actual, desired) {
-
-		actualJSON, err := json.Marshal(actual)
-		if err != nil {
-			return err
-		}
-		desiredJSON, err := json.Marshal(desired)
-		if err != nil {
-			return err
-		}
-
-		patch, err := strategicpatch.CreateTwoWayMergePatch(actualJSON, desiredJSON, appsv1beta1.StatefulSet{})
-
-		if err != nil {
-			return err
-		}
-
-		_, err = c.kubernetesClient.AppsV1beta1().StatefulSets(redis.Namespace).Patch(actual.Name, types.StrategicMergePatchType, patch)
-
-		return err
-	}
-
-	return nil
-}
-
-func (c *RedisController) updateServiceToDesired(redis *redisv1.Redis, actual *apiv1.Service, desiredFunction func(*redisv1.Redis) *apiv1.Service) error {
-
-	desired := desiredFunction(redis)
-
-	if !reflect.DeepEqual(actual, desired) {
-
-		desiredJSON, err := json.Marshal(desired)
-		if err != nil {
-			return err
-		}
-
-		_, err = c.kubernetesClient.CoreV1().Services(redis.Namespace).Patch(actual.Name, types.StrategicMergePatchType, desiredJSON)
-
-		return err
-	}
-
-	return nil
-}
-
-func (c *RedisController) updateConfigMapToDesired(redis *redisv1.Redis, actual *apiv1.ConfigMap, desiredFunction func(*redisv1.Redis) *apiv1.ConfigMap) error {
-
-	desired := desiredFunction(redis)
-
-	if !reflect.DeepEqual(actual, desired) {
-		desiredJSON, err := json.Marshal(desired)
-		if err != nil {
-			return err
-		}
-
-		_, err = c.kubernetesClient.CoreV1().ConfigMaps(redis.Namespace).Patch(actual.Name, types.StrategicMergePatchType, desiredJSON)
-
-		return err
-	}
-
-	return nil
-}
-
-func (c *RedisController) updateEndpointToDesired(redis *redisv1.Redis, actual *apiv1.Endpoints, ipAddress string, desiredFunction func(*redisv1.Redis, string) *apiv1.Endpoints) error {
-
-	desired := desiredFunction(redis, ipAddress)
-
-	if !reflect.DeepEqual(actual, desired) {
-		desiredJSON, err := json.Marshal(desired)
-		if err != nil {
-			return err
-		}
-
-		_, err = c.kubernetesClient.CoreV1().Endpoints(redis.Namespace).Patch(actual.Name, types.StrategicMergePatchType, desiredJSON)
-
-		return err
-	}
-
-	return nil
 }
 
 func (c *RedisController) deleteResources(namespace, name string) error {
@@ -441,4 +290,104 @@ func (c *RedisController) deleteResources(namespace, name string) error {
 	}
 
 	return nil
+}
+
+func (c *RedisController) updateToDesired(namespace string, actual interface{}, desired interface{}) error {
+
+	c.logger.Debug("Updating resource")
+	defer c.logger.Debug("Finished updating resource")
+
+	switch t := actual.(type) {
+
+	case *appsv1beta1.Deployment:
+
+		patch, err := createStrategicMergePatch(actual, desired, appsv1beta1.Deployment{})
+
+		if err != nil {
+			return err
+		}
+
+		_, err = c.kubernetesClient.AppsV1beta1().Deployments(namespace).Patch(t.Name, types.StrategicMergePatchType, patch)
+
+		return err
+
+	case *appsv1beta1.StatefulSet:
+
+		patch, err := createStrategicMergePatch(actual, desired, appsv1beta1.StatefulSet{})
+
+		if err != nil {
+			return err
+		}
+		_, err = c.kubernetesClient.AppsV1beta1().StatefulSets(namespace).Patch(t.Name, types.StrategicMergePatchType, patch)
+
+		return err
+
+	case *apiv1.Service:
+
+		if !reflect.DeepEqual(actual, desired) {
+
+			desiredJSON, err := json.Marshal(desired)
+			if err != nil {
+				return err
+			}
+
+			_, err = c.kubernetesClient.CoreV1().Services(namespace).Patch(t.Name, types.StrategicMergePatchType, desiredJSON)
+
+			return err
+		}
+
+		return nil
+
+	case *apiv1.Endpoints:
+
+		patch, err := createStrategicMergePatch(actual, desired, apiv1.Endpoints{})
+
+		if err != nil {
+			return err
+		}
+		_, err = c.kubernetesClient.CoreV1().Endpoints(namespace).Patch(t.Name, types.StrategicMergePatchType, patch)
+
+		return err
+
+	case *apiv1.ConfigMap:
+
+		patch, err := createStrategicMergePatch(actual, desired, apiv1.ConfigMap{})
+
+		if err != nil {
+			return err
+		}
+		_, err = c.kubernetesClient.CoreV1().ConfigMaps(namespace).Patch(t.Name, types.StrategicMergePatchType, patch)
+
+		return err
+
+	default:
+		return errors.UnsupportedKubeResource
+	}
+
+}
+
+func createStrategicMergePatch(actual interface{}, desired interface{}, dataStruct interface{}) ([]byte, error) {
+
+	if !reflect.DeepEqual(actual, desired) {
+
+		actualJSON, err := json.Marshal(actual)
+
+		if err != nil {
+			return nil, err
+		}
+		desiredJSON, err := json.Marshal(desired)
+		if err != nil {
+			return nil, err
+		}
+
+		patch, err := strategicpatch.CreateTwoWayMergePatch(actualJSON, desiredJSON, dataStruct)
+
+		if err != nil {
+			return nil, err
+		}
+
+		return patch, nil
+	}
+
+	return nil, nil
 }

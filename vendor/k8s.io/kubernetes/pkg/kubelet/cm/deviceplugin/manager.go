@@ -19,7 +19,6 @@ package deviceplugin
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
@@ -38,7 +37,9 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/config"
 	"k8s.io/kubernetes/pkg/kubelet/lifecycle"
 	"k8s.io/kubernetes/pkg/kubelet/metrics"
-	"k8s.io/kubernetes/plugin/pkg/scheduler/schedulercache"
+	utilstore "k8s.io/kubernetes/pkg/kubelet/util/store"
+	"k8s.io/kubernetes/pkg/scheduler/schedulercache"
+	utilfs "k8s.io/kubernetes/pkg/util/filesystem"
 )
 
 // ActivePodsFunc is a function that returns a list of pods to reconcile.
@@ -80,6 +81,7 @@ type ManagerImpl struct {
 
 	// podDevices contains pod to allocated device mapping.
 	podDevices podDevices
+	store      utilstore.Store
 }
 
 type sourcesReadyStub struct{}
@@ -114,6 +116,11 @@ func newManagerImpl(socketPath string) (*ManagerImpl, error) {
 	// Before that, initializes them to perform no-op operations.
 	manager.activePods = func() []*v1.Pod { return []*v1.Pod{} }
 	manager.sourcesReady = &sourcesReadyStub{}
+	var err error
+	manager.store, err = utilstore.NewFileStore(dir, utilfs.DefaultFs{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize device plugin checkpointing store: %+v", err)
+	}
 
 	return manager, nil
 }
@@ -418,22 +425,27 @@ func (m *ManagerImpl) writeCheckpoint() error {
 	if err != nil {
 		return err
 	}
-	filepath := m.checkpointFile()
-	return ioutil.WriteFile(filepath, dataJSON, 0644)
+	err = m.store.Write(kubeletDevicePluginCheckpoint, dataJSON)
+	if err != nil {
+		return fmt.Errorf("failed to write deviceplugin checkpoint file %q: %v", kubeletDevicePluginCheckpoint, err)
+	}
+	return nil
 }
 
 // Reads device to container allocation information from disk, and populates
 // m.allocatedDevices accordingly.
 func (m *ManagerImpl) readCheckpoint() error {
-	filepath := m.checkpointFile()
-	content, err := ioutil.ReadFile(filepath)
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to read checkpoint file %q: %v", filepath, err)
+	content, err := m.store.Read(kubeletDevicePluginCheckpoint)
+	if err != nil {
+		if err == utilstore.ErrKeyNotFound {
+			return nil
+		}
+		return fmt.Errorf("failed to read checkpoint file %q: %v", kubeletDevicePluginCheckpoint, err)
 	}
-	glog.V(2).Infof("Read checkpoint file %s\n", filepath)
+	glog.V(4).Infof("Read checkpoint file %s\n", kubeletDevicePluginCheckpoint)
 	var data checkpointData
 	if err := json.Unmarshal(content, &data); err != nil {
-		return fmt.Errorf("failed to unmarshal checkpoint data: %v", err)
+		return fmt.Errorf("failed to unmarshal deviceplugin checkpoint data: %v", err)
 	}
 
 	m.mutex.Lock()
@@ -538,6 +550,10 @@ func (m *ManagerImpl) allocateContainerResources(pod *v1.Pod, container *v1.Cont
 	podUID := string(pod.UID)
 	contName := container.Name
 	allocatedDevicesUpdated := false
+	// Extended resources are not allowed to be overcommitted.
+	// Since device plugin advertises extended resources,
+	// therefore Requests must be equal to Limits and iterating
+	// over the Limits should be sufficient.
 	for k, v := range container.Resources.Limits {
 		resource := string(k)
 		needed := int(v.Value())
