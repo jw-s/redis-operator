@@ -33,3 +33,5 @@ import:
   - util/flowcontrol
 - package: github.com/go-redis/redis
   version: ~6.7.3
+- package: github.com/urfave/cli
+  version: ^1.20.0

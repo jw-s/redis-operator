@@ -5,8 +5,13 @@ import (
 	"github.com/go-redis/redis"
 	"github.com/jw-s/redis-operator/pkg/apis/redis/v1"
 	redisclient "github.com/jw-s/redis-operator/pkg/generated/clientset/typed/redis/v1"
-	"github.com/sirupsen/logrus"
 	"github.com/jw-s/redis-operator/pkg/operator/spec"
+	"github.com/sirupsen/logrus"
+)
+
+const (
+	ReportingPhaseMessage = "Updating phase"
+	PhaseKey              = "Phase"
 )
 
 type Config struct {
@@ -24,7 +29,7 @@ type Redis struct {
 
 func New(config Config, redis *v1.Redis) *Redis {
 	newRedis := &Redis{
-		logger: logrus.WithField("pkg", "redis"),
+		logger: logrus.WithFields(logrus.Fields{"pkg": "redis", "queue_item": redis.Name}),
 		Config: config,
 	}
 
@@ -39,8 +44,8 @@ func New(config Config, redis *v1.Redis) *Redis {
 
 func (r *Redis) UpdateRedisStatus() error {
 
-	r.logger.Debugf("Updating redis %s", r.Redis.Name)
-	defer r.logger.Debugf("Finished updating redis %s", r.Redis.Name)
+	r.logger.Debug("Updating redis status")
+	defer r.logger.Debug("Finished updating redis status")
 
 	newRedis, err := r.Config.RedisCRClient.Redises(r.Redis.Namespace).Update(r.Redis)
 
@@ -54,21 +59,33 @@ func (r *Redis) UpdateRedisStatus() error {
 }
 
 func (r *Redis) ReportFailed() error {
+	r.logger.
+		WithField(PhaseKey, v1.ServerFailedPhase).
+		Debug(ReportingPhaseMessage)
 	r.Redis.Status.SetPhase(v1.ServerFailedPhase)
 	return r.UpdateRedisStatus()
 }
 
 func (r *Redis) ReportRunning() error {
+	r.logger.
+		WithField(PhaseKey, v1.ServerRunningPhase).
+		Debug(ReportingPhaseMessage)
 	r.Redis.Status.SetPhase(v1.ServerRunningPhase)
 	return r.UpdateRedisStatus()
 }
 
 func (r *Redis) ReportCreating() error {
+	r.logger.
+		WithField(PhaseKey, v1.ServerCreatingPhase).
+		Debug(ReportingPhaseMessage)
 	r.Redis.Status.SetPhase(v1.ServerCreatingPhase)
 	return r.UpdateRedisStatus()
 }
 
 func (r *Redis) ReportStopping() error {
+	r.logger.
+		WithField(PhaseKey, v1.ServerStoppingPhase).
+		Debug(ReportingPhaseMessage)
 	r.Redis.Status.SetPhase(v1.ServerStoppingPhase)
 	return r.UpdateRedisStatus()
 }

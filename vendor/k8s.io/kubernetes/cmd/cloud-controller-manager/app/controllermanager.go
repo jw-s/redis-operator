@@ -32,7 +32,6 @@ import (
 	"k8s.io/apiserver/pkg/server/healthz"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
-	clientset "k8s.io/client-go/kubernetes"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -93,6 +92,10 @@ func Run(s *options.CloudControllerManagerServer) error {
 		glog.Fatalf("Cloud provider could not be initialized: %v", err)
 	}
 
+	if cloud == nil {
+		glog.Fatalf("cloud provider is nil")
+	}
+
 	if cloud.HasClusterID() == false {
 		if s.AllowUntaggedCloud == true {
 			glog.Warning("detected a cluster without a ClusterID.  A ClusterID will be required in the future.  Please tag your cluster to avoid any future issues")
@@ -116,7 +119,7 @@ func Run(s *options.CloudControllerManagerServer) error {
 	// Override kubeconfig qps/burst settings from flags
 	kubeconfig.QPS = s.KubeAPIQPS
 	kubeconfig.Burst = int(s.KubeAPIBurst)
-	kubeClient, err := clientset.NewForConfig(restclient.AddUserAgent(kubeconfig, "cloud-controller-manager"))
+	kubeClient, err := kubernetes.NewForConfig(restclient.AddUserAgent(kubeconfig, "cloud-controller-manager"))
 	if err != nil {
 		glog.Fatalf("Invalid API configuration: %v", err)
 	}
@@ -136,16 +139,16 @@ func Run(s *options.CloudControllerManagerServer) error {
 			clientBuilder = controller.SAControllerClientBuilder{
 				ClientConfig:         restclient.AnonymousClientConfig(kubeconfig),
 				CoreClient:           kubeClient.CoreV1(),
-				AuthenticationClient: kubeClient.Authentication(),
+				AuthenticationClient: kubeClient.AuthenticationV1(),
 				Namespace:            "kube-system",
 			}
 		} else {
 			clientBuilder = rootClientBuilder
 		}
 
-		err := StartControllers(s, kubeconfig, clientBuilder, stop, recorder, cloud)
-		glog.Fatalf("error running controllers: %v", err)
-		panic("unreachable")
+		if err := StartControllers(s, kubeconfig, rootClientBuilder, clientBuilder, stop, recorder, cloud); err != nil {
+			glog.Fatalf("error running controllers: %v", err)
+		}
 	}
 
 	if !s.LeaderElection.LeaderElect {
@@ -165,7 +168,7 @@ func Run(s *options.CloudControllerManagerServer) error {
 		"cloud-controller-manager",
 		leaderElectionClient.CoreV1(),
 		resourcelock.ResourceLockConfig{
-			Identity:      id + "-external-cloud-controller",
+			Identity:      id,
 			EventRecorder: recorder,
 		})
 	if err != nil {
@@ -189,9 +192,9 @@ func Run(s *options.CloudControllerManagerServer) error {
 }
 
 // StartControllers starts the cloud specific controller loops.
-func StartControllers(s *options.CloudControllerManagerServer, kubeconfig *restclient.Config, clientBuilder controller.ControllerClientBuilder, stop <-chan struct{}, recorder record.EventRecorder, cloud cloudprovider.Interface) error {
+func StartControllers(s *options.CloudControllerManagerServer, kubeconfig *restclient.Config, rootClientBuilder, clientBuilder controller.ControllerClientBuilder, stop <-chan struct{}, recorder record.EventRecorder, cloud cloudprovider.Interface) error {
 	// Function to build the kube client object
-	client := func(serviceAccountName string) clientset.Interface {
+	client := func(serviceAccountName string) kubernetes.Interface {
 		return clientBuilder.ClientOrDie(serviceAccountName)
 	}
 
@@ -200,7 +203,7 @@ func StartControllers(s *options.CloudControllerManagerServer, kubeconfig *restc
 		cloud.Initialize(clientBuilder)
 	}
 
-	versionedClient := client("shared-informers")
+	versionedClient := rootClientBuilder.ClientOrDie("shared-informers")
 	sharedInformers := informers.NewSharedInformerFactory(versionedClient, resyncPeriod(s)())
 
 	// Start the CloudNodeController
@@ -295,7 +298,7 @@ func startHTTP(s *options.CloudControllerManagerServer) {
 	glog.Fatal(server.ListenAndServe())
 }
 
-func createRecorder(kubeClient *clientset.Clientset) record.EventRecorder {
+func createRecorder(kubeClient *kubernetes.Clientset) record.EventRecorder {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
 	eventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: v1core.New(kubeClient.CoreV1().RESTClient()).Events("")})

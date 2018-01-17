@@ -1,5 +1,6 @@
 REDIS_OPERATOR_IMAGE_NAME := joelws/redis-operator
-VERSION=$(shell git rev-parse --short HEAD)
+VERSION=$(shell cat ./VERSION)
+COMMIT=$(shell git rev-parse --short HEAD)
 .PHONY: all clean build
 
 all: build
@@ -8,8 +9,8 @@ build: bin/redis
 	docker build -t $(REDIS_OPERATOR_IMAGE_NAME):$(VERSION) -f ./Dockerfile_prod .
 	docker tag $(REDIS_OPERATOR_IMAGE_NAME):$(VERSION) $(REDIS_OPERATOR_IMAGE_NAME):latest
 
-bin/redis: install-deps
-	GOOS=linux GOARCH=amd64 go build -o bin/redis-operator ./cmd/operator
+bin/redis: 
+	GOOS=linux GOARCH=amd64 go build -o bin/redis-operator -ldflags "-X main.commit=${COMMIT} -X main.version=${VERSION}" ./cmd/operator
 
 install-deps:
 	glide up -v

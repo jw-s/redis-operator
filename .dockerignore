@@ -1,4 +1,2 @@
-vendor/
-.gitignore
-.idea/
-*.iml
+*
+!bin/

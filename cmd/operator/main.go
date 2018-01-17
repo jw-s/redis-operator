@@ -6,20 +6,56 @@ import (
 	"syscall"
 	"time"
 
+	"fmt"
 	client "github.com/jw-s/redis-operator/pkg/generated/clientset"
 	redisinformers "github.com/jw-s/redis-operator/pkg/generated/informers/externalversions"
 	"github.com/jw-s/redis-operator/pkg/operator/controller"
 	"github.com/jw-s/redis-operator/pkg/operator/util"
 	"github.com/sirupsen/logrus"
+	"github.com/urfave/cli"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 )
 
 var (
-	Resync time.Duration = time.Minute
+	name        = "redis-operator"
+	commit      string
+	version     string
+	description = "The Redis operator manages redis servers deployed to Kubernetes and automates tasks related to operating a Redis server setup."
+	resync      time.Duration
+	debug       bool
 )
 
+func init() {
+	logrus.SetFormatter(&logrus.JSONFormatter{})
+	logrus.SetOutput(os.Stdout)
+}
+
 func main() {
+	app := cli.NewApp()
+	app.Name = name
+	app.Usage = description
+	app.Action = func(c *cli.Context) { run() }
+	app.Version = fmt.Sprintf("%s (%s)", version, commit)
+	app.Flags = []cli.Flag{
+		cli.DurationFlag{
+			Name:        "resync,re",
+			Usage:       "Time between syncs for informers",
+			Destination: &resync,
+			Value:       time.Minute,
+		},
+		cli.BoolFlag{
+			Name:        "debug,d",
+			Usage:       "Toggle on Debug level for logs",
+			Destination: &debug,
+		},
+	}
+	app.Run(os.Args)
+}
+
+func run() {
+
+	toggleDebug(debug)
 
 	doneChan := make(chan struct{})
 
@@ -40,11 +76,11 @@ func main() {
 		panic("Could not create redis client: " + err.Error())
 	}
 
-	controllerConfig := controller.NewConfig(config, Resync)
+	controllerConfig := controller.NewConfig(config, resync)
 
-	redisInformerFactory := redisinformers.NewSharedInformerFactory(redisClient, Resync)
+	redisInformerFactory := redisinformers.NewSharedInformerFactory(redisClient, resync)
 
-	informerFactory := informers.NewSharedInformerFactory(kubeClient, Resync)
+	informerFactory := informers.NewSharedInformerFactory(kubeClient, resync)
 
 	c := controller.New(controllerConfig,
 		kubeClient,
@@ -74,4 +110,10 @@ func main() {
 		}
 	}
 
+}
+
+func toggleDebug(toggleDebugMode bool) {
+	if toggleDebugMode {
+		logrus.SetLevel(logrus.DebugLevel)
+	}
 }
