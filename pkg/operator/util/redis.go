@@ -66,10 +66,11 @@ func NewSentinelRedisClient(name string) *redis.Client {
 	sentinelService := fmt.Sprintf("%s:%v", name, spec.RedisSentinelPort)
 
 	return redis.NewClient(&redis.Options{
-		Addr:        sentinelService,
-		Password:    "",
-		DB:          0,
-		MaxRetries:  10,
-		DialTimeout: time.Second * 30,
+		Addr:            sentinelService,
+		Password:        "",
+		DB:              0,
+		MaxRetries:      10,
+		DialTimeout:     time.Second * 30,
+		MinRetryBackoff: time.Second * 30,
 	})
 }

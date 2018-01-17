@@ -1,9 +1,6 @@
 package controller
 
 import (
-	"time"
-
-	"github.com/jw-s/redis-operator/pkg/apis/redis/v1"
 	redisclient "github.com/jw-s/redis-operator/pkg/generated/clientset/typed/redis/v1"
 	redisinformer "github.com/jw-s/redis-operator/pkg/generated/informers/externalversions/redis/v1"
 	redislister "github.com/jw-s/redis-operator/pkg/generated/listers/redis/v1"
@@ -21,7 +18,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/kubernetes/pkg/scheduler/api"
+	"time"
 )
 
 type Controller interface {
@@ -178,11 +175,7 @@ func (c *RedisController) process(key string) error {
 		return err
 	}
 
-	redisCopy, err := api.Scheme.DeepCopy(obj)
-
-	if err != nil {
-		return err
-	}
+	redisCopy := obj.DeepCopy()
 
 	myRedis, exists := c.redises[name]
 
@@ -190,10 +183,11 @@ func (c *RedisController) process(key string) error {
 
 		cfg := redis.Config{
 			RedisCRClient: c.redisClient,
-			RedisClient:   util.NewSentinelRedisClient(spec.GetSentinelServiceName(name)),
+			RedisClient: util.
+				NewSentinelRedisClient(spec.GetSentinelServiceName(name)),
 		}
 
-		newRedis := redis.New(cfg, redisCopy.(*v1.Redis))
+		newRedis := redis.New(cfg, redisCopy)
 
 		c.redises[name] = newRedis
 
@@ -213,7 +207,7 @@ func (c *RedisController) process(key string) error {
 
 	}
 
-	myRedis.Redis = redisCopy.(*v1.Redis)
+	myRedis.Redis = redisCopy
 
 	if err := c.reconcile(myRedis); err != nil {
 		return errors.NewAggregate([]error{

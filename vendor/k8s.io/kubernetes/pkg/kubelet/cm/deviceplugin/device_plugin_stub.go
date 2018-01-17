@@ -86,14 +86,11 @@ func (m *Stub) Start() error {
 	pluginapi.RegisterDevicePluginServer(m.server, m)
 
 	go m.server.Serve(sock)
-	// Wait till grpc server is ready.
-	for i := 0; i < 10; i++ {
-		services := m.server.GetServiceInfo()
-		if len(services) > 1 {
-			break
-		}
-		time.Sleep(1 * time.Second)
+	_, conn, err := dial(m.socket)
+	if err != nil {
+		return err
 	}
+	conn.Close()
 	log.Println("Starting to serve on", m.socket)
 
 	return nil
@@ -109,7 +106,8 @@ func (m *Stub) Stop() error {
 
 // Register registers the device plugin for the given resourceName with Kubelet.
 func (m *Stub) Register(kubeletEndpoint, resourceName string) error {
-	conn, err := grpc.Dial(kubeletEndpoint, grpc.WithInsecure(),
+	conn, err := grpc.Dial(kubeletEndpoint, grpc.WithInsecure(), grpc.WithBlock(),
+		grpc.WithTimeout(10*time.Second),
 		grpc.WithDialer(func(addr string, timeout time.Duration) (net.Conn, error) {
 			return net.DialTimeout("unix", addr, timeout)
 		}))
@@ -134,16 +132,8 @@ func (m *Stub) Register(kubeletEndpoint, resourceName string) error {
 // ListAndWatch lists devices and update that list according to the Update call
 func (m *Stub) ListAndWatch(e *pluginapi.Empty, s pluginapi.DevicePlugin_ListAndWatchServer) error {
 	log.Println("ListAndWatch")
-	var devs []*pluginapi.Device
 
-	for _, d := range m.devs {
-		devs = append(devs, &pluginapi.Device{
-			ID:     d.ID,
-			Health: pluginapi.Healthy,
-		})
-	}
-
-	s.Send(&pluginapi.ListAndWatchResponse{Devices: devs})
+	s.Send(&pluginapi.ListAndWatchResponse{Devices: m.devs})
 
 	for {
 		select {

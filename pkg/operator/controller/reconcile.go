@@ -15,7 +15,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
-	"k8s.io/kubernetes/pkg/scheduler/api"
 )
 
 func (c *RedisController) reconcile(redis *redis.Redis) error {
@@ -123,13 +122,7 @@ func (c *RedisController) sentinelProcess(redis *redisv1.Redis) error {
 		return err
 	}
 
-	obj, err := api.Scheme.DeepCopy(actual)
-
-	if err != nil {
-		return err
-	}
-
-	return c.updateToDesired(redis.Namespace, obj.(*appsv1beta1.Deployment), spec.SentinelDeployment(redis))
+	return c.updateToDesired(redis.Namespace, actual.DeepCopy(), spec.SentinelDeployment(redis))
 
 }
 
@@ -164,13 +157,7 @@ func (c *RedisController) slaveProcess(redis *redisv1.Redis) error {
 		return err
 	}
 
-	obj, err := api.Scheme.DeepCopy(actual)
-
-	if err != nil {
-		return err
-	}
-
-	return c.updateToDesired(redis.Namespace, obj.(*appsv1beta1.StatefulSet), spec.SlaveStatefulSet(redis))
+	return c.updateToDesired(redis.Namespace, actual.DeepCopy(), spec.SlaveStatefulSet(redis))
 
 }
 
@@ -188,13 +175,7 @@ func (c *RedisController) sentinelServiceProcess(redis *redisv1.Redis) error {
 		return err
 	}
 
-	obj, err := api.Scheme.DeepCopy(actual)
-
-	if err != nil {
-		return err
-	}
-
-	return c.updateToDesired(redis.Namespace, obj.(*apiv1.Service), spec.SentinelService(redis))
+	return c.updateToDesired(redis.Namespace, actual.DeepCopy(), spec.SentinelService(redis))
 
 }
 
@@ -211,13 +192,7 @@ func (c *RedisController) masterServiceProcess(redis *redisv1.Redis) error {
 		return err
 	}
 
-	obj, err := api.Scheme.DeepCopy(actual)
-
-	if err != nil {
-		return err
-	}
-
-	return c.updateToDesired(redis.Namespace, obj.(*apiv1.Service), spec.MasterService(redis))
+	return c.updateToDesired(redis.Namespace, actual.DeepCopy(), spec.MasterService(redis))
 }
 
 func (c *RedisController) masterEndpointProcess(redis *redisv1.Redis, ipAddress string) error {
@@ -233,13 +208,7 @@ func (c *RedisController) masterEndpointProcess(redis *redisv1.Redis, ipAddress 
 		return err
 	}
 
-	obj, err := api.Scheme.DeepCopy(actual)
-
-	if err != nil {
-		return err
-	}
-
-	return c.updateToDesired(redis.Namespace, obj.(*apiv1.Endpoints), spec.MasterServiceEndpoint(redis, ipAddress))
+	return c.updateToDesired(redis.Namespace, actual.DeepCopy(), spec.MasterServiceEndpoint(redis, ipAddress))
 
 }
 

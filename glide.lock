@@ -1,5 +1,5 @@
-hash: 88ac18845b43d91d4ed53b9f24c729b9910be9a2af42653b3978bef88ea5dc4d
-updated: 2018-01-12T14:55:33.339287474+01:00
+hash: 50dc247fc3eb0bf941c6b013311833fd93f3ec4eab13c9d746823320e395a45e
+updated: 2018-01-17T10:52:40.14079958+01:00
 imports:
 - name: github.com/davecgh/go-spew
   version: 782f4967f2dc4564575ca782fe2d04090b5faca8
@@ -82,8 +82,10 @@ imports:
   version: f006c2ac4710855cf0f916dd6b77acf6b048dc6e
 - name: github.com/spf13/pflag
   version: 9ff6c6923cfffbcd502984b8e0c80539a94968b7
+- name: github.com/urfave/cli
+  version: cfb38830724cc34fedffe9a2a29fb54fa9169cd1
 - name: golang.org/x/crypto
-  version: 5f55bce93ad2c89f411e009659bb1fd83da36e7b
+  version: 13931e22f9e72ea58bb73048bc752b48c6d4d4ac
   subpackages:
   - ssh/terminal
 - name: golang.org/x/net
@@ -296,7 +298,7 @@ imports:
   subpackages:
   - pkg/common
 - name: k8s.io/kubernetes
-  version: 744a6f0cde9eb2c3420a6151d6fd911f1f41b330
+  version: 99fb21f61fc0e6c1fffc0d4b5138665806eadce6
   subpackages:
   - pkg/scheduler/api
 testImports: []
