@@ -1,4 +1,4 @@
-# Redis Operator
+# Redis Operator [![Build Status](https://travis-ci.org/jw-s/redis-operator.svg?branch=master)](https://travis-ci.org/jw-s/redis-operator) 
 
 ## Status
 
