@@ -17,4 +17,6 @@ before_install:
 
 script:
 - make build
-- make push
+- if [ "${TRAVIS_PULL_REQUEST}" = "false" ] && [ "${TRAVIS_BRANCH}" = "master" ]; then
+    make push;
+  fi
