@@ -13,7 +13,6 @@ spec:
     spec:
       containers:
       - image: joelws/redis-operator:latest
-        imagePullPolicy: Never
         name: redis-operator
         resources:
           limits:
