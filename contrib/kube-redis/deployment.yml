@@ -4,6 +4,7 @@ metadata:
   labels:
     app: redis-operator
   name: redis-operator
+  namespace: default
 spec:
   replicas: 1
   template:
@@ -21,3 +22,4 @@ spec:
           requests:
             cpu: 100m
             memory: 50Mi
+      serviceAccountName: redis-operator

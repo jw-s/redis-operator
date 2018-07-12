@@ -2,6 +2,7 @@ apiVersion: operator.joelws.com/v1
 kind: Redis
 metadata:
   name: my-redis
+  namespace: default
 spec:
   sentinels:
     replicas: 3
