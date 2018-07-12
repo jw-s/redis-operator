@@ -4,7 +4,6 @@ metadata:
   labels:
     app: redis-operator
   name: redis-operator
-  namespace: default
 spec:
   replicas: 1
   template:
@@ -13,7 +12,7 @@ spec:
         app: redis-operator
     spec:
       containers:
-      - image: joelws/redis-operator:latest
+      - image: joelws/redis-operator:0.1.0
         name: redis-operator
         resources:
           limits:

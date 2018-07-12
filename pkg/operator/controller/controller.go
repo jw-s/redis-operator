@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"time"
+
 	redisclient "github.com/jw-s/redis-operator/pkg/generated/clientset/typed/redis/v1"
 	redisinformer "github.com/jw-s/redis-operator/pkg/generated/informers/externalversions/redis/v1"
 	redislister "github.com/jw-s/redis-operator/pkg/generated/listers/redis/v1"
@@ -18,7 +20,6 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
-	"time"
 )
 
 type Controller interface {
@@ -210,6 +211,12 @@ func (c *RedisController) process(key string) error {
 	myRedis.Redis = redisCopy
 
 	if err := c.reconcile(myRedis); err != nil {
+		return errors.NewAggregate([]error{
+			err,
+			myRedis.ReportFailed(),
+		})
+	}
+	if err := myRedis.MarkReadyCondition(); err != nil {
 		return errors.NewAggregate([]error{
 			err,
 			myRedis.ReportFailed(),

@@ -192,16 +192,17 @@ func (ss *ServerStatus) MarkReadyCondition() {
 
 func (ss *ServerStatus) markCondition(sc ServerCondition) {
 
-	if len(ss.Conditions) == 10 {
-		ss.Conditions = append(ss.Conditions[1:], sc)
-		return
+	if len(ss.Conditions) != 0 {
+		if ss.Conditions[len(ss.Conditions)-1] == sc {
+			return
+		} else if len(ss.Conditions) == 10 {
+			ss.Conditions = append(ss.Conditions[1:], sc)
+		}
 	}
-
 	ss.Conditions = append(ss.Conditions, sc)
-
 }
 
-func (s *ServerSpec) ApplyDefaults() {
+func (s *ServerSpec) ApplyDefaults(name string) {
 	if len(s.BaseImage) == 0 {
 		logrus.WithField("name", defaultBaseImage).
 			Warn("Using default image")
@@ -217,6 +218,13 @@ func (s *ServerSpec) ApplyDefaults() {
 	if s.Sentinels.Replicas != 0 && s.Sentinels.Replicas%2 == 0 {
 		logrus.Warn("Redis sentinels should be an odd number to prevent ties!")
 	}
+	if len(s.Sentinels.ConfigMap) == 0 {
+		logrus.
+			WithField("name", name).
+			Warn("Using Default ConfigMap")
+		logrus.Warn("This configMap will be created if it doesn't already exist.")
+		s.Sentinels.ConfigMap = ConfigMap(name)
+	}
 
 	if s.Pod == nil {
 		logrus.
@@ -230,15 +238,5 @@ func (s *ServerSpec) ApplyDefaults() {
 			},
 		}
 	}
-}
 
-func (s *SentinelSpec) ApplyDefaults(name string) {
-
-	if len(s.ConfigMap) == 0 {
-		logrus.
-			WithField("name", name).
-			Warn("Using Default ConfigMap")
-		logrus.Warn("This configMap will be created if it doesn't already exist.")
-		s.ConfigMap = ConfigMap(name)
-	}
 }
