@@ -26,6 +26,10 @@ func (c *RedisController) reconcile(redis *redis.Redis) error {
 			return err
 		}
 
+		if err := redis.MarkAddSeedMasterCondition(); err != nil {
+			return err
+		}
+
 		seedIP, err := util.GetSeedMasterIP(c.podLister, redis.Redis.Namespace, redis.Redis.Name)
 
 		if err != nil {
@@ -59,6 +63,12 @@ func (c *RedisController) reconcile(redis *redis.Redis) error {
 			return err
 		}
 
+		if !redis.SeedMasterDeleted {
+			if err := redis.MarkRemoveSeedMasterCondition(); err != nil {
+				return err
+			}
+		}
+
 		redis.SeedMasterDeleted = true
 	}
 
@@ -82,11 +92,7 @@ func (c *RedisController) reconcile(redis *redis.Redis) error {
 		return err
 	}
 
-	if err := c.slaveProcess(redis.Redis); err != nil {
-		return err
-	}
-
-	return nil
+	return c.slaveProcess(redis.Redis)
 
 }
 func (c *RedisController) seedMasterPodProcess(redis *redisv1.Redis) error {

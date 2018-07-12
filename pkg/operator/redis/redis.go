@@ -2,6 +2,7 @@ package redis
 
 import (
 	"fmt"
+
 	"github.com/go-redis/redis"
 	"github.com/jw-s/redis-operator/pkg/apis/redis/v1"
 	redisclient "github.com/jw-s/redis-operator/pkg/generated/clientset/typed/redis/v1"
@@ -33,9 +34,7 @@ func New(config Config, redis *v1.Redis) *Redis {
 		Config: config,
 	}
 
-	redis.Spec.ApplyDefaults()
-
-	redis.Spec.Sentinels.ApplyDefaults(spec.GetSentinelConfigMapName(redis.Name))
+	redis.Spec.ApplyDefaults(spec.GetSentinelConfigMapName(redis.Name))
 
 	newRedis.Redis = redis
 
@@ -87,5 +86,20 @@ func (r *Redis) ReportStopping() error {
 		WithField(PhaseKey, v1.ServerStoppingPhase).
 		Debug(ReportingPhaseMessage)
 	r.Redis.Status.SetPhase(v1.ServerStoppingPhase)
+	return r.UpdateRedisStatus()
+}
+
+func (r *Redis) MarkReadyCondition() error {
+	r.Redis.Status.MarkReadyCondition()
+	return r.UpdateRedisStatus()
+}
+
+func (r *Redis) MarkAddSeedMasterCondition() error {
+	r.Redis.Status.MarkAddSeedMasterCondition()
+	return r.UpdateRedisStatus()
+}
+
+func (r *Redis) MarkRemoveSeedMasterCondition() error {
+	r.Redis.Status.MarkRemoveSeedMasterCondition()
 	return r.UpdateRedisStatus()
 }
