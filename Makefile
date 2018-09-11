@@ -10,7 +10,8 @@ build: bin/redis
 	docker tag $(REDIS_OPERATOR_IMAGE_NAME):$(VERSION) $(REDIS_OPERATOR_IMAGE_NAME):latest
 
 bin/redis: 
-	GOOS=linux GOARCH=amd64 go build -o bin/redis-operator -ldflags "-X main.commit=${COMMIT} -X main.version=${VERSION}" ./cmd/operator
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o bin/redis-operator -ldflags "-X main.commit=${COMMIT} -X main.version=${VERSION}" ./cmd/operator
+	chmod +x ./bin/redis-operator
 
 install-deps:
 	glide up -v

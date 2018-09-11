@@ -1,0 +1,25 @@
+redis:
+  sentinels:
+    replicas: 3
+    quorum: 2
+  slaves:
+    replicas: 3
+
+image:
+  repository: joelws/redis-operator
+  tag: 0.1.1
+  pullPolicy: Always
+
+resources:
+  limits:
+    cpu: 200m
+    memory: 100Mi
+  requests:
+    cpu: 100m
+    memory: 50Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
