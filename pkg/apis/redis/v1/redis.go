@@ -40,7 +40,7 @@ func (c *Redis) AsOwner() metav1.OwnerReference {
 const (
 	defaultBaseImage = "redis"
 	defaultVersion   = "4.0-alpine"
-	DefaultPVSize    = "500Mi"
+	defaultPVSize    = "500Mi"
 )
 
 type ServerSpec struct {
@@ -228,15 +228,28 @@ func (s *ServerSpec) ApplyDefaults(name string) {
 
 	if s.Pod == nil {
 		logrus.
-			WithField("size", DefaultPVSize).
+			WithField("size", defaultPVSize).
 			Warn("Using default size for PV")
 		s.Pod = &PodPolicy{
 			Resources: v1.ResourceRequirements{
 				Requests: v1.ResourceList{
-					v1.ResourceStorage: resource.MustParse(DefaultPVSize),
+					v1.ResourceStorage: resource.MustParse(defaultPVSize),
 				},
 			},
 		}
 	}
 
+}
+
+//Adding runAsUser: 100 to ContainerSpec as it failed to chown (related to underlaying storage config)
+func (s *ServerSpec) GetRedisRunAsUser() (runAsPointer *int64) {
+	var runAs int64
+	var defaultRedisRunAsUser int64 = 100
+	runAsPointer = &runAs
+	if s.BaseImage == defaultBaseImage {
+		logrus.WithField("uid", defaultRedisRunAsUser).
+			Warn("Using default redis user")
+		runAsPointer = &defaultRedisRunAsUser
+	}
+	return
 }

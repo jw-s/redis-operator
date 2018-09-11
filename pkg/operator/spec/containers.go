@@ -73,13 +73,16 @@ func RedisMaster(redis apiv1.Container) apiv1.Container {
 func RedisSlave(redis apiv1.Container, spec *v1.Redis) apiv1.Container {
 
 	redis.Name = "redis-slave"
-
 	redis.Ports = []apiv1.ContainerPort{
 		{
 			Name:          "main",
 			ContainerPort: int32(RedisPort),
 			Protocol:      apiv1.ProtocolTCP,
 		},
+	}
+
+	redis.SecurityContext = &apiv1.SecurityContext{
+		RunAsUser: spec.Spec.GetRedisRunAsUser(),
 	}
 
 	redis.VolumeMounts = []apiv1.VolumeMount{
