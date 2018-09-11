@@ -1,6 +1,11 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
+  labels:
+    app: {{ include "redis-operator.name" . }}
+    chart: {{ include "redis-operator.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
   name: redis-operator
 rules:
 - apiGroups:

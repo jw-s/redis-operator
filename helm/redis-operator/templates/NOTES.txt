@@ -1,0 +1,3 @@
+The redis operator is installed in your cluster.
+
+You can now deploy a redis resource.
