@@ -2,9 +2,10 @@ package spec
 
 import (
 	"fmt"
+	"strconv"
+
 	"github.com/jw-s/redis-operator/pkg/apis/redis/v1"
 	apiv1 "k8s.io/api/core/v1"
-	"strconv"
 )
 
 func GetRedisMasterName(redis *v1.Redis) string {
@@ -28,6 +29,16 @@ func RedisContainer(baseImage, version string) apiv1.Container {
 	c := apiv1.Container{
 		Name:  "redis",
 		Image: baseImage + ":" + version,
+		Env: []apiv1.EnvVar{
+			{
+				Name: "MY_POD_IP",
+				ValueFrom: &apiv1.EnvVarSource{
+					FieldRef: &apiv1.ObjectFieldSelector{
+						FieldPath: "status.podIP",
+					},
+				},
+			},
+		},
 	}
 
 	return c
@@ -94,6 +105,7 @@ func RedisSlave(redis apiv1.Container, spec *v1.Redis) apiv1.Container {
 
 	redis.Args = []string{
 		"--slaveof", GetMasterServiceName(spec.Name), strconv.Itoa(RedisPort),
+		"slave-announce-ip", "${MY_POD_IP}",
 	}
 
 	return redis
