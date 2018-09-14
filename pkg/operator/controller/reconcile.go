@@ -43,7 +43,7 @@ func (c *RedisController) reconcile(redis *redis.Redis) error {
 	} else {
 		ip, err := util.GetMasterIPByName(redis.Config.RedisClient, spec.GetRedisMasterName(redis.Redis))
 
-		if err != nil {
+		if err != nil || (util.GetSlaveCount(redis.Config.RedisClient, spec.GetRedisMasterName(redis.Redis)) == 0) {
 			// Something went wrong, mark to spin up seed pod on next run
 			redis.SeedMasterProcessComplete = false
 			return err

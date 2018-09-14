@@ -29,15 +29,9 @@ func RedisContainer(baseImage, version string) apiv1.Container {
 	c := apiv1.Container{
 		Name:  "redis",
 		Image: baseImage + ":" + version,
-		Env: []apiv1.EnvVar{
-			{
-				Name: "MY_POD_IP",
-				ValueFrom: &apiv1.EnvVarSource{
-					FieldRef: &apiv1.ObjectFieldSelector{
-						FieldPath: "status.podIP",
-					},
-				},
-			},
+		Args: []string{
+			"--bind", "0.0.0.0",
+			"--slave-read-only", "no",
 		},
 	}
 
@@ -58,10 +52,12 @@ func RedisSentinel(container apiv1.Container) apiv1.Container {
 
 	container.VolumeMounts = GetVolumeMounts()
 
-	container.Args = []string{
+	container.Args = append([]string{
 		fmt.Sprintf("%s/%s", DataMountPath, ConfigMapConfKeyName),
 		"--sentinel",
-	}
+	},
+		container.Args...,
+	)
 
 	return container
 }
@@ -103,10 +99,9 @@ func RedisSlave(redis apiv1.Container, spec *v1.Redis) apiv1.Container {
 		},
 	}
 
-	redis.Args = []string{
+	redis.Args = append(redis.Args,
 		"--slaveof", GetMasterServiceName(spec.Name), strconv.Itoa(RedisPort),
-		"slave-announce-ip", "${MY_POD_IP}",
-	}
+	)
 
 	return redis
 }

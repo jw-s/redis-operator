@@ -248,7 +248,7 @@ func (s *ServerSpec) GetRedisRunAsUser() (runAsPointer *int64) {
 	runAsPointer = &runAs
 	if s.BaseImage == defaultBaseImage {
 		logrus.WithField("uid", defaultRedisRunAsUser).
-			Warn("Using default redis user")
+			Debug("Using default redis user")
 		runAsPointer = &defaultRedisRunAsUser
 	}
 	return
