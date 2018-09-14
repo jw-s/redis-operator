@@ -2,9 +2,10 @@ package spec
 
 import (
 	"fmt"
+	"strconv"
+
 	"github.com/jw-s/redis-operator/pkg/apis/redis/v1"
 	apiv1 "k8s.io/api/core/v1"
-	"strconv"
 )
 
 func GetRedisMasterName(redis *v1.Redis) string {
@@ -28,6 +29,10 @@ func RedisContainer(baseImage, version string) apiv1.Container {
 	c := apiv1.Container{
 		Name:  "redis",
 		Image: baseImage + ":" + version,
+		Args: []string{
+			"--bind", "0.0.0.0",
+			"--slave-read-only", "no",
+		},
 	}
 
 	return c
@@ -47,10 +52,12 @@ func RedisSentinel(container apiv1.Container) apiv1.Container {
 
 	container.VolumeMounts = GetVolumeMounts()
 
-	container.Args = []string{
+	container.Args = append([]string{
 		fmt.Sprintf("%s/%s", DataMountPath, ConfigMapConfKeyName),
 		"--sentinel",
-	}
+	},
+		container.Args...,
+	)
 
 	return container
 }
@@ -92,9 +99,9 @@ func RedisSlave(redis apiv1.Container, spec *v1.Redis) apiv1.Container {
 		},
 	}
 
-	redis.Args = []string{
+	redis.Args = append(redis.Args,
 		"--slaveof", GetMasterServiceName(spec.Name), strconv.Itoa(RedisPort),
-	}
+	)
 
 	return redis
 }

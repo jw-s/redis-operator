@@ -2,18 +2,23 @@ package util
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/go-redis/redis"
 	"github.com/jw-s/redis-operator/pkg/operator/spec"
 	"github.com/sirupsen/logrus"
 	v1lister "k8s.io/client-go/listers/core/v1"
-	"time"
 )
 
 func GetMasterIPByName(client *redis.Client, name string) (string, error) {
 
 	cmd := redis.NewStringSliceCmd("SENTINEL", "get-master-addr-by-name", name)
 
-	client.Process(cmd)
+	err := client.Process(cmd)
+
+	if err != nil {
+		return "", err
+	}
 
 	masterAddr, err := cmd.Result()
 
@@ -60,6 +65,39 @@ func GetSeedMasterIP(podLister v1lister.PodLister, namespace, name string) (stri
 		Debug("Got seed master IP")
 
 	return masterIP, nil
+}
+
+func GetSlaveCount(client *redis.Client, name string) int {
+	var count int
+	cmd := redis.NewSliceCmd("SENTINEL", "slaves", name)
+
+	err := client.Process(cmd)
+
+	if err != nil {
+		logrus.
+			Error(err.Error())
+		return count
+	}
+
+	result, err := cmd.Result()
+
+	if err != nil {
+		logrus.
+			Error(err.Error())
+		return count
+	}
+
+	for _, slaveBlob := range result {
+		if _, ok := slaveBlob.([]interface{}); ok {
+			count++
+		}
+	}
+
+	logrus.
+		WithField("count", count).
+		Debug("slaves avaliable")
+
+	return count
 }
 
 func NewSentinelRedisClient(name string) *redis.Client {

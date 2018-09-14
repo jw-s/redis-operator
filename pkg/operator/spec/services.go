@@ -2,6 +2,7 @@ package spec
 
 import (
 	"fmt"
+
 	cr "github.com/jw-s/redis-operator/pkg/apis/redis/v1"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
