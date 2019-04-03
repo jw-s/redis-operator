@@ -16,7 +16,7 @@
 
 7. Creates a *Deployment* for Sentinels.
 
-8. Creates a *Deployment* for slaves.
+8. Creates a *StatefulSet* for slaves.
 
 
 ## Updated
