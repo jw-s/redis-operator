@@ -2,6 +2,9 @@ apiVersion: operator.joelws.com/v1
 kind: Redis
 metadata:
   name: redis-default
+  annotations:
+   "helm.sh/hook": post-install
+   "helm.sh/hook-weight": "-5"
 spec:
   sentinels:
     replicas: {{ .Values.redis.sentinels.replicas }}
