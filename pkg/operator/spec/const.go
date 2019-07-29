@@ -3,7 +3,7 @@ package spec
 const (
 	RedisPort                      = 6379
 	RedisSentinelPort              = 26379
-	HAProxyName                    = "redis-haproxy"
+	HAProxyName                    = "redis-haproxy-%s"
 	MasterPodName                  = "redis-master-%s"
 	MasterServiceName              = "redis-master-%s"
 	SentinelServiceName            = "redis-sentinel-%s"

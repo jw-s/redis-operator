@@ -122,6 +122,34 @@ func New(cfg Config,
 			},
 		})
 
+	endpointsInformer.Informer().AddEventHandler(
+		cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				key, err := cache.MetaNamespaceKeyFunc(obj)
+				if err != nil {
+					c.logger.WithError(err).Fatal("Add")
+					return
+				}
+				c.queue.Add(key)
+			},
+			DeleteFunc: func(obj interface{}) {
+				key, err := cache.MetaNamespaceKeyFunc(obj)
+				if err != nil {
+					c.logger.WithError(err).Fatal("Delete")
+					return
+				}
+				c.queue.Add(key)
+			},
+			UpdateFunc: func(oldObj interface{}, newObj interface{}) {
+				key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(newObj)
+				if err != nil {
+					c.logger.WithError(err).Fatal("Update")
+					return
+				}
+				c.queue.Add(key)
+			},
+		})
+
 	return c
 }
 
