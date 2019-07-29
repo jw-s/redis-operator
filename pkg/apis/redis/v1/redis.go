@@ -2,7 +2,7 @@ package v1
 
 import (
 	"github.com/sirupsen/logrus"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -39,11 +39,15 @@ func (c *Redis) AsOwner() metav1.OwnerReference {
 
 const (
 	defaultBaseImage = "redis"
-	defaultVersion   = "4.0-alpine"
+	defaultVersion   = "5.0-alpine"
 	defaultPVSize    = "500Mi"
 )
 
 type ServerSpec struct {
+	UseHAProxy      bool   `json:"useHAProxy,omitempty"`      // set true to activate HAProxy deployment
+	HAProxyImage    string `json:"haproxyImage,omitempty"`    // override default haproxy:1.9.4-alpine
+	HAProxyReplicas *int32 `json:"haproxyReplicas,omitempty"` // override default 1
+
 	Sentinels SentinelSpec `json:"sentinels"`
 
 	Slaves SlaveSpec `json:"slaves"`
